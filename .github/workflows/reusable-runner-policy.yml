@@ -1,0 +1,60 @@
+name: Reusable Zero-Cost Runner Policy
+
+on:
+  workflow_call:
+    inputs:
+      runner_json:
+        description: Runner used to enforce the policy
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64"]'
+      allow_regex:
+        description: Optional grep regex for workflow lines intentionally allowed to use hosted runners
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  runner-policy:
+    name: No GitHub-hosted runners
+    runs-on: ${{ fromJSON(inputs.runner_json) }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Reject paid hosted-runner labels
+        shell: bash
+        env:
+          ALLOW_REGEX: ${{ inputs.allow_regex }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p /tmp/platform-ci
+          : > /tmp/platform-ci/hosted-runners.txt
+
+          if [[ -d .github/workflows ]]; then
+            grep -RInE \
+              --include='*.yml' --include='*.yaml' \
+              'runs-on:[[:space:]]*["'"']?(ubuntu|windows|macos)-|runs-on:[[:space:]]*\[[^]]*(ubuntu|windows|macos)-|(^|[[:space:]])(ubuntu|windows|macos)-(latest|[0-9][^, ]*)[[:space:]]*[,\]]' \
+              .github/workflows \
+              > /tmp/platform-ci/hosted-runners.txt || true
+          fi
+
+          if [[ -n "$ALLOW_REGEX" && -s /tmp/platform-ci/hosted-runners.txt ]]; then
+            grep -Ev "$ALLOW_REGEX" /tmp/platform-ci/hosted-runners.txt \
+              > /tmp/platform-ci/hosted-runners.filtered.txt || true
+            mv /tmp/platform-ci/hosted-runners.filtered.txt /tmp/platform-ci/hosted-runners.txt
+          fi
+
+          if [[ -s /tmp/platform-ci/hosted-runners.txt ]]; then
+            echo "GitHub-hosted runner references are forbidden by the zero-cost private-repo policy:" >&2
+            cat /tmp/platform-ci/hosted-runners.txt >&2
+            echo >&2
+            echo "Use: runs-on: [self-hosted, Linux, X64]" >&2
+            exit 1
+          fi
+
+          echo "No GitHub-hosted runner labels found in .github/workflows."
