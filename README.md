@@ -1,6 +1,6 @@
 # platform-ci
 
-Reusable GitHub Actions workflows shared across `dporkka/*` repositories and other repositories that are explicitly granted access.
+Public reusable GitHub Actions workflows shared across `dporkka/*`, `nulang-org/*`, and other repositories.
 
 ## Workflows
 
@@ -12,6 +12,6 @@ Reusable GitHub Actions workflows shared across `dporkka/*` repositories and oth
 
 Callers own triggers, concurrency, permissions, secrets, service containers, and repository-specific policy. Generic deterministic language validation belongs here.
 
-Production callers should reference the stable `v1` branch (or an immutable commit SHA for maximum reproducibility).
+Production callers should reference the stable `v1` branch, or an immutable commit SHA for maximum reproducibility. `main` is the development line; advance `v1` only after `Validate Platform CI` is green.
 
 See `SHARED_CI.md` for examples and migration guidance.
