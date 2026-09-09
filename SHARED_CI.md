@@ -1,6 +1,6 @@
 # Shared CI
 
-`dporkka/platform-ci` is the canonical reusable GitHub Actions library for David Porkka's repositories.
+`dporkka/platform-ci` is the canonical public reusable GitHub Actions library for David Porkka's repositories.
 
 ## Design
 
@@ -10,14 +10,7 @@
 - `runner_json` makes the same workflow usable on GitHub-hosted or self-hosted runners.
 - Existing repository-specific CI should be migrated incrementally rather than deleted all at once.
 - Production callers should use the stable `v1` branch or an immutable commit SHA.
-
-## Required repository setting
-
-Because `platform-ci` is private, enable reusable workflow access under:
-
-`Settings -> Actions -> General -> Access`
-
-Allow workflows and actions in this repository to be accessed from the private repositories that will call it.
+- Because this repository is public, public and private repositories can call these reusable workflows without a private-repository Actions access grant.
 
 ## Runner selectors
 
@@ -110,10 +103,19 @@ python:
     test_command: pytest -q
 ```
 
+## Validation
+
+`Validate Platform CI` runs on `main` and `v1` and performs two checks:
+
+1. `actionlint` validates all GitHub Actions YAML and reusable-workflow expressions.
+2. A real local `workflow_call` smoke test executes `reusable-detect.yml` on GitHub-hosted Ubuntu.
+
+Do not advance `v1` to a new `main` revision until this validation is green.
+
 ## Migration policy
 
 1. Add the shared workflow alongside existing CI.
-2. Verify cross-repository access, runner assignment, and command parity.
+2. Verify cross-repository resolution, runner assignment, and command parity.
 3. Move generic jobs such as language setup, lint, typecheck, unit tests, and builds into the shared layer.
 4. Keep service-heavy integration tests, deployments, secrets-dependent jobs, database migrations, and repository-specific policy local until a purpose-built reusable workflow exists.
 5. Add path/affected-area gating to legacy workflows so a docs or workflow-only edit does not start unrelated database, browser, container, or deployment jobs.
@@ -125,4 +127,4 @@ python:
 - `dporkka/adacavo` — shared Node/pnpm typecheck, workspace lint, and root Jest tests.
 - `dporkka/apex` — shared Go, Node, and Rust validation; protobuf and deployment policy remain local.
 
-`nulang-org/nulang` is ready for the same migration once the GitHub App can create refs in that organization.
+`nulang-org/nulang` is ready for the same migration once the connected GitHub App can create refs in that organization.
