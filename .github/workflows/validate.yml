@@ -35,3 +35,10 @@ jobs:
     uses: ./.github/workflows/reusable-detect.yml
     with:
       runner_json: '"ubuntu-latest"'
+
+  smoke-runner-policy:
+    name: Reusable runner policy smoke test
+    uses: ./.github/workflows/reusable-runner-policy.yml
+    with:
+      runner_json: '"ubuntu-latest"'
+      allow_regex: '^\.github/workflows/'

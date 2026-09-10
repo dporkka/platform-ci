@@ -38,7 +38,7 @@ jobs:
           if [[ -d .github/workflows ]]; then
             grep -RInE \
               --include='*.yml' --include='*.yaml' \
-              'runs-on:[[:space:]]*["'"']?(ubuntu|windows|macos)-|runs-on:[[:space:]]*\[[^]]*(ubuntu|windows|macos)-|(^|[[:space:]])(ubuntu|windows|macos)-(latest|[0-9][^, ]*)[[:space:]]*[,\]]' \
+              'runs-on:[[:space:]]*[^[:alnum:]]?(ubuntu|windows|macos)-|runs-on:[[:space:]]*\[[^]]*(ubuntu|windows|macos)-|(^|[[:space:]])(ubuntu|windows|macos)-(latest|[0-9][^, ]*)[[:space:]]*[,\]]' \
               .github/workflows \
               > /tmp/platform-ci/hosted-runners.txt || true
           fi
