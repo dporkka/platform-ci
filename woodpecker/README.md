@@ -71,6 +71,12 @@ then runs `pnpm install` once per lockfile hash. The stamp lives in
 pipeline pays for the install. Repositories without a committed lockfile are
 installed with `--no-frozen-lockfile` and stamped on `package.json`.
 
+Because sibling steps start concurrently, the stamp check and the install are
+held under a lock (`flock`, with an atomic-`mkdir` fallback) — without it N steps
+would run N `pnpm install` processes against the same `node_modules`. Measured on
+this host: three sibling steps against the unlocked script produced 3 installs;
+with the lock, 1.
+
 ## GitHub Actions → Woodpecker v3 mapping
 
 | GitHub Actions | Woodpecker v3 |
@@ -114,6 +120,11 @@ Woodpecker/Drone docs.
 - YAML anchors live under a top-level `variables:` key (`x-*` and top-level
   `environment:` are schema-invalid). Step and service `environment:` is literal —
   never expanded.
+- Valid `when.event` values are exactly, and are enum-checked by `lint`:
+  `push`, `pull_request`, `pull_request_closed`, `pull_request_metadata`, `tag`,
+  `deployment`, `cron`, `manual`, `release`. `on: release: types: [published]`
+  maps to `event: [release]` (not `tag`); `on: workflow_dispatch` maps to
+  `event: [manual]`.
 - Every step is a fresh container: only the workspace volume and named volumes
   persist, and an `export` reaches only the rest of that step.
 - A repo must be marked **Trusted** for step `volumes:` — otherwise:
