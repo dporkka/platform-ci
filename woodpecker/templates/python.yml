@@ -1,0 +1,44 @@
+# Canonical Python pipeline skeleton — SHAPE ONLY.
+#
+# Copy into <repo>/.woodpecker/<name>.yml and replace the command lists with the
+# repository's own commands from the Actions workflow being ported. Keep the
+# Python minor version aligned with the repository's manifest
+# (pyproject.toml `requires-python` / .python-version), not with the
+# `actions/setup-python` tag in the source workflow.
+when:
+  - event: [push, pull_request]
+    branch: main
+
+variables:
+  python-base: &python-base
+    image: python:3.12-bookworm
+    volumes:
+      - pip-cache:/root/.cache/pip
+      - venv:/opt/venv
+
+steps:
+  - name: Bootstrap
+    image: curlimages/curl:8.11.1
+    commands:
+      - mkdir -p .woodpecker/scripts
+      - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/setup-repo.sh" -o .woodpecker/scripts/setup-repo.sh
+      - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/notify-slack.sh" -o .woodpecker/scripts/notify-slack.sh
+      - chmod +x .woodpecker/scripts/setup-repo.sh .woodpecker/scripts/notify-slack.sh
+
+  - name: Lint
+    <<: *python-base
+    depends_on: []
+    commands:
+      - python -m venv /opt/venv
+      - . /opt/venv/bin/activate
+      - pip install -r requirements-dev.txt
+      - ruff check .
+
+  - name: Test
+    <<: *python-base
+    depends_on: []
+    commands:
+      - python -m venv /opt/venv
+      - . /opt/venv/bin/activate
+      - pip install -r requirements-dev.txt
+      - pytest
