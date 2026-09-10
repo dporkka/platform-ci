@@ -9,7 +9,7 @@
 # changing directory first:
 #
 #   - . .woodpecker/scripts/setup-repo.sh                        # repo root
-#   - cd apps/web && . ../.woodpecker/scripts/setup-repo.sh      # subdirectory
+#   - cd apps/web && . "$${CI_WORKSPACE}/.woodpecker/scripts/setup-repo.sh"
 #
 # Do not pass a path as an argument: dash — the `/bin/sh` of Debian-based images
 # and therefore Woodpecker's step shell — does not pass operands to a sourced
@@ -31,7 +31,10 @@
 # at /root/.local/share/pnpm/store (see the templates' step definitions).
 #
 # `pnpm install` is guarded by a stamp keyed on the project's lockfile, so only
-# the first step of a pipeline pays for it; later steps reuse the workspace.
+# the first step of a pipeline pays for it; later steps reuse the workspace. The
+# stamp check and the install are held under a lock, because steps that share a
+# dependency (they all depend on `Bootstrap`) start concurrently: without it,
+# N steps would run N `pnpm install` processes against the same node_modules.
 #
 # Environment overrides:
 #   PNPM_VERSION   pnpm version to activate (default 10.22.0)
@@ -55,17 +58,6 @@ TURBO_TELEMETRY_DISABLED=1
 DO_NOT_TRACK=1
 export COREPACK_HOME TURBO_TELEMETRY_DISABLED DO_NOT_TRACK
 mkdir -p "$COREPACK_HOME"
-
-# Shims are recreated per step (cheap, /usr/local/bin is already on PATH); the
-# pnpm version itself is downloaded into COREPACK_HOME and therefore cached.
-# Fall back to a workspace-local bin dir when /usr/local/bin is not writable.
-if ! corepack enable --install-directory /usr/local/bin >/dev/null 2>&1; then
-  mkdir -p "$WORKSPACE/.woodpecker/bin"
-  corepack enable --install-directory "$WORKSPACE/.woodpecker/bin" >/dev/null
-  PATH="$WORKSPACE/.woodpecker/bin:$PATH"
-  export PATH
-fi
-corepack prepare "pnpm@$PNPM_VERSION" --activate >/dev/null
 
 # The stamp key is the hash of the project's lockfile. Repositories without a
 # committed lockfile (installed with --no-frozen-lockfile) key on package.json
@@ -102,6 +94,49 @@ fi
 
 STAMP="$PROJECT/node_modules/$STAMP_PREFIX$STAMP_KEY"
 
+# ── mutual exclusion ─────────────────────────────────────────────────────────
+# Every step of a pipeline that depends only on `Bootstrap` starts at the same
+# time, and most of them source this prelude. The corepack cache and
+# node_modules are shared, so both the activation below and the install further
+# down must be serialized. flock (util-linux in node:*-bookworm, busybox in
+# alpine) is used when present; the mkdir fallback is atomic everywhere.
+LOCK="$WORKSPACE/.woodpecker/install.lock"
+LOCK_HELD=""
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$LOCK"
+  flock 9
+  LOCK_KIND="flock"
+else
+  LOCK_KIND="mkdir"
+  WAITED=0
+  while ! mkdir "$LOCK.d" 2>/dev/null; do
+    # A step killed while holding the lock leaves $LOCK.d behind; only a
+    # finished install by the holder (stamp present) or a bounded wait ends it.
+    if [ -f "$STAMP" ]; then
+      break
+    fi
+    WAITED=$((WAITED + 1))
+    if [ "$WAITED" -gt 300 ]; then
+      break
+    fi
+    sleep 2
+  done
+fi
+LOCK_HELD=1
+
+# Shims are recreated per step (cheap, /usr/local/bin is already on PATH); the
+# pnpm version itself is downloaded into COREPACK_HOME and therefore cached.
+# Fall back to a workspace-local bin dir when /usr/local/bin is not writable.
+if ! corepack enable --install-directory /usr/local/bin >/dev/null 2>&1; then
+  mkdir -p "$WORKSPACE/.woodpecker/bin"
+  corepack enable --install-directory "$WORKSPACE/.woodpecker/bin" >/dev/null
+  PATH="$WORKSPACE/.woodpecker/bin:$PATH"
+  export PATH
+fi
+corepack prepare "pnpm@$PNPM_VERSION" --activate >/dev/null
+
+# Re-checked under the lock: a concurrent step may have installed while this one
+# waited.
 if [ ! -f "$STAMP" ]; then
   pnpm --dir "$PROJECT" install "$FROZEN"
   # Drop the resolved lockfile when the project does not commit one: it is a
@@ -116,4 +151,12 @@ if [ ! -f "$STAMP" ]; then
   rm -f "$PROJECT"/node_modules/.woodpecker-deps-* 2>/dev/null || true
   mkdir -p "$PROJECT/node_modules"
   touch "$STAMP"
+fi
+
+if [ -n "${LOCK_HELD:-}" ]; then
+  if [ "$LOCK_KIND" = "flock" ]; then
+    exec 9>&-
+  else
+    rmdir "$LOCK.d" 2>/dev/null || true
+  fi
 fi
