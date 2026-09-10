@@ -18,14 +18,17 @@ woodpecker/
 
 ## Bootstrap step
 
-First step of **every** pipeline in **every** repository. `curlimages/curl` is used
-because it is the one small image guaranteed to have curl; the workspace volume
-carries the downloaded files to the later steps.
+First step of **every** pipeline in **every** repository. `curlimages/curl` cannot
+be used: it runs as `curl_user` (uid 100) and cannot create files in the
+root-owned workspace — the step fails with `mkdir: can't create directory
+'.woodpecker/'`. Root `alpine` with `curl` installed from apk is the verified
+form; the workspace volume carries the downloaded files to later steps.
 
 ```yaml
   - name: Bootstrap
-    image: curlimages/curl:8.11.1
+    image: alpine:3.20
     commands:
+      - apk add --no-cache curl
       - mkdir -p .woodpecker/scripts
       - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/setup-repo.sh" -o .woodpecker/scripts/setup-repo.sh
       - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/notify-slack.sh" -o .woodpecker/scripts/notify-slack.sh
@@ -93,7 +96,7 @@ Woodpecker/Drone docs.
 - Step shell is `/bin/sh -e` (**dash** in Debian-based images): no `[[ ]]`, no
   arrays, no `local`, no `pipefail`. POSIX-ify, or add
   `entrypoint: ["/bin/bash", "-c", "echo $CI_SCRIPT | base64 -d | /bin/bash -e"]`
-  on an image that ships bash (not `curlimages/curl`, not the scratch Woodpecker
+  on an image that ships bash (not `alpine`, not the scratch Woodpecker
   images).
 - `${VAR}` is expanded at **config-evaluation** time; write `$${VAR}` when the
   *shell* must expand it. `${#arr[@]}`, `${arr[*]}`, `${6:-}` are hard config
