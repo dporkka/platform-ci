@@ -1,0 +1,47 @@
+# Canonical Rust pipeline skeleton — SHAPE ONLY.
+#
+# Copy into <repo>/.woodpecker/<name>.yml and replace the command lists with the
+# repository's own commands from the Actions workflow being ported. The toolchain
+# version must come from the repository's `rust-toolchain.toml`; when it pins a
+# non-stable channel, pin the matching `rust:<ver>-bookworm` image here instead
+# of `rust:1-bookworm`.
+when:
+  - event: [push, pull_request]
+    branch: main
+
+variables:
+  rust-base: &rust-base
+    image: rust:1-bookworm
+    volumes:
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+      - cargo-target:/app/target
+
+steps:
+  - name: Bootstrap
+    image: curlimages/curl:8.11.1
+    commands:
+      - mkdir -p .woodpecker/scripts
+      - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/setup-repo.sh" -o .woodpecker/scripts/setup-repo.sh
+      - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/notify-slack.sh" -o .woodpecker/scripts/notify-slack.sh
+      - chmod +x .woodpecker/scripts/setup-repo.sh .woodpecker/scripts/notify-slack.sh
+
+  - name: Format
+    <<: *rust-base
+    depends_on: []
+    commands:
+      - rustup component add rustfmt
+      - cargo fmt --all -- --check
+
+  - name: Clippy
+    <<: *rust-base
+    depends_on: []
+    commands:
+      - rustup component add clippy
+      - cargo clippy --all-targets -- -D warnings
+
+  - name: Test
+    <<: *rust-base
+    depends_on: []
+    commands:
+      - cargo test --all

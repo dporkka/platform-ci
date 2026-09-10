@@ -1,0 +1,68 @@
+# Canonical Node/pnpm pipeline skeleton — SHAPE ONLY.
+#
+# Copy into <repo>/.woodpecker/<name>.yml and replace the command lists with the
+# repository's own scripts, taken verbatim from the Actions workflow being
+# ported: same jobs, same commands, same severity gates, no check added or
+# dropped. The Bootstrap step, the `when:` shape, the node image tag and the
+# volumes are the parts that come from this file.
+#
+# Node tag: match the repo's own engines/manifest, `node:22-bookworm` is the
+# fleet default. pnpm version comes from package.json `packageManager`; override
+# with `PNPM_VERSION: <ver>` in the step `environment:` only if it differs from
+# the script default.
+when:
+  - event: [push, pull_request]
+    branch: main
+
+variables:
+  node-base: &node-base
+    image: node:22-bookworm
+
+steps:
+  # Required first step of every pipeline: fetch the shared scripts into the
+  # workspace so later steps can source them. curlimages/curl is the one image
+  # guaranteed to have curl and no shell surprises.
+  - name: Bootstrap
+    image: curlimages/curl:8.11.1
+    commands:
+      - mkdir -p .woodpecker/scripts
+      - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/setup-repo.sh" -o .woodpecker/scripts/setup-repo.sh
+      - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/notify-slack.sh" -o .woodpecker/scripts/notify-slack.sh
+      - chmod +x .woodpecker/scripts/setup-repo.sh .woodpecker/scripts/notify-slack.sh
+
+  - name: Lint
+    <<: *node-base
+    depends_on: []
+    volumes:
+      - pnpm-store:/root/.local/share/pnpm/store
+    commands:
+      - . .woodpecker/scripts/setup-repo.sh
+      - pnpm run lint
+
+  - name: Typecheck
+    <<: *node-base
+    depends_on: []
+    volumes:
+      - pnpm-store:/root/.local/share/pnpm/store
+    commands:
+      - . .woodpecker/scripts/setup-repo.sh
+      - pnpm run typecheck
+
+  - name: Test
+    <<: *node-base
+    depends_on: []
+    volumes:
+      - pnpm-store:/root/.local/share/pnpm/store
+    commands:
+      - . .woodpecker/scripts/setup-repo.sh
+      - pnpm test
+
+  # Copy only if the ported workflow notified on failure; needs SLACK_WEBHOOK_URL
+  # as a repo secret scoped away from pull_request.
+  - name: Notify failure
+    <<: *node-base
+    depends_on: []
+    when:
+      - status: [failure]
+    commands:
+      - . .woodpecker/scripts/notify-slack.sh "lint/test"

@@ -1,0 +1,43 @@
+# Canonical Go pipeline skeleton — SHAPE ONLY.
+#
+# Copy into <repo>/.woodpecker/<name>.yml and replace the command lists with the
+# repository's own commands from the Actions workflow being ported. The Go
+# version must come from the repository's `go.mod` `go` directive, not from the
+# `actions/setup-go` tag in the source workflow.
+when:
+  - event: [push, pull_request]
+    branch: main
+
+variables:
+  go-base: &go-base
+    image: golang:1.24-bookworm
+    volumes:
+      - go-mod:/root/go
+      - go-build:/root/.cache/go-build
+
+steps:
+  - name: Bootstrap
+    image: curlimages/curl:8.11.1
+    commands:
+      - mkdir -p .woodpecker/scripts
+      - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/setup-repo.sh" -o .woodpecker/scripts/setup-repo.sh
+      - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/notify-slack.sh" -o .woodpecker/scripts/notify-slack.sh
+      - chmod +x .woodpecker/scripts/setup-repo.sh .woodpecker/scripts/notify-slack.sh
+
+  - name: Vet
+    <<: *go-base
+    depends_on: []
+    commands:
+      - go vet ./...
+
+  - name: Test
+    <<: *go-base
+    depends_on: []
+    commands:
+      - go test ./...
+
+  - name: Build
+    <<: *go-base
+    depends_on: []
+    commands:
+      - go build ./...

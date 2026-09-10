@@ -1,0 +1,72 @@
+# Canonical polyglot pipeline skeleton — SHAPE ONLY.
+#
+# Copy into <repo>/.woodpecker/<name>.yml and replace the command lists with the
+# repository's own commands from the Actions workflow(s) being ported. This
+# variant exists for monorepos that mix toolchains (Go + Node desktop + Rust
+# native module + container definitions) and for the POSIX-ification patterns
+# below.
+when:
+  - event: [push, pull_request]
+    branch: main
+
+variables:
+  node-base: &node-base
+    image: node:22-bookworm
+
+steps:
+  - name: Bootstrap
+    image: curlimages/curl:8.11.1
+    commands:
+      - mkdir -p .woodpecker/scripts
+      - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/setup-repo.sh" -o .woodpecker/scripts/setup-repo.sh
+      - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/notify-slack.sh" -o .woodpecker/scripts/notify-slack.sh
+      - chmod +x .woodpecker/scripts/setup-repo.sh .woodpecker/scripts/notify-slack.sh
+
+  - name: Go
+    image: golang:1.24-bookworm
+    depends_on: []
+    commands:
+      - go test ./...
+
+  # A package in a subdirectory: change directory first, then source the shared
+  # prelude through $CI_WORKSPACE ($${...} escapes it for the shell, and the
+  # absolute path is correct at any depth). The `cd` persists for the rest of
+  # this step's shell.
+  - name: Desktop
+    <<: *node-base
+    depends_on: []
+    volumes:
+      - pnpm-store:/root/.local/share/pnpm/store
+    commands:
+      - cd apps/desktop && . "$${CI_WORKSPACE}/.woodpecker/scripts/setup-repo.sh"
+      - pnpm run check
+      - pnpm test
+      - pnpm run build
+
+  - name: Native Storage
+    image: rust:1-bookworm
+    depends_on: []
+    commands:
+      - apt-get update
+      - apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
+
+  # Steps whose source used bash-isms are POSIX-ified rather than wrapped in a
+  # bash entrypoint when the image has no bash until it installs one. `[[ ]]`
+  # becomes `[ ]`, `pipefail` is dropped, and anything the *shell* must expand
+  # (not Woodpecker's config preprocessor) is written `$${VAR}`.
+  - name: Deployment
+    image: alpine:3.20
+    depends_on: []
+    commands:
+      - apk add --no-cache docker-cli docker-cli-compose jq
+      - docker compose -f deploy/compose.yaml config --quiet
+      - |
+        actual=$(docker compose -f deploy/compose.yaml config --format json | jq -r '.services | to_entries[] | select(((.value.profiles // []) | length) == 0) | .key' | sort)
+        expected=$(printf 'apex-core\ncaddy\n' | sort)
+        if [ "$$actual" != "$$expected" ]; then
+          echo "Default services changed."
+          echo "Found: $$actual"
+          echo "Expected: $$expected"
+          exit 1
+        fi
