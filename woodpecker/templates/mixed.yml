@@ -15,8 +15,9 @@ variables:
 
 steps:
   - name: Bootstrap
-    image: curlimages/curl:8.11.1
+    image: alpine:3.20
     commands:
+      - apk add --no-cache curl
       - mkdir -p .woodpecker/scripts
       - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/setup-repo.sh" -o .woodpecker/scripts/setup-repo.sh
       - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/notify-slack.sh" -o .woodpecker/scripts/notify-slack.sh

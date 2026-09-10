@@ -20,11 +20,12 @@ variables:
 
 steps:
   # Required first step of every pipeline: fetch the shared scripts into the
-  # workspace so later steps can source them. curlimages/curl is the one image
-  # guaranteed to have curl and no shell surprises.
+  # workspace so later steps can source them. Root alpine, not curlimages/curl —
+  # that image runs as uid 100 and cannot write into the root-owned workspace.
   - name: Bootstrap
-    image: curlimages/curl:8.11.1
+    image: alpine:3.20
     commands:
+      - apk add --no-cache curl
       - mkdir -p .woodpecker/scripts
       - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/setup-repo.sh" -o .woodpecker/scripts/setup-repo.sh
       - curl -fsSL "https://raw.githubusercontent.com/dporkka/platform-ci/v1/woodpecker/scripts/notify-slack.sh" -o .woodpecker/scripts/notify-slack.sh
