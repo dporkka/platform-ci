@@ -29,20 +29,20 @@ steps:
 
   - name: Format
     <<: *rust-base
-    depends_on: []
+    depends_on: [Bootstrap]
     commands:
       - rustup component add rustfmt
       - cargo fmt --all -- --check
 
   - name: Clippy
     <<: *rust-base
-    depends_on: []
+    depends_on: [Bootstrap]
     commands:
       - rustup component add clippy
       - cargo clippy --all-targets -- -D warnings
 
   - name: Test
     <<: *rust-base
-    depends_on: []
+    depends_on: [Bootstrap]
     commands:
       - cargo test --all
