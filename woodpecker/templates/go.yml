@@ -27,18 +27,18 @@ steps:
 
   - name: Vet
     <<: *go-base
-    depends_on: []
+    depends_on: [Bootstrap]
     commands:
       - go vet ./...
 
   - name: Test
     <<: *go-base
-    depends_on: []
+    depends_on: [Bootstrap]
     commands:
       - go test ./...
 
   - name: Build
     <<: *go-base
-    depends_on: []
+    depends_on: [Bootstrap]
     commands:
       - go build ./...

@@ -28,7 +28,7 @@ steps:
 
   - name: Lint
     <<: *python-base
-    depends_on: []
+    depends_on: [Bootstrap]
     commands:
       - python -m venv /opt/venv
       - . /opt/venv/bin/activate
@@ -37,7 +37,7 @@ steps:
 
   - name: Test
     <<: *python-base
-    depends_on: []
+    depends_on: [Bootstrap]
     commands:
       - python -m venv /opt/venv
       - . /opt/venv/bin/activate

@@ -33,7 +33,7 @@ steps:
 
   - name: Lint
     <<: *node-base
-    depends_on: []
+    depends_on: [Bootstrap]
     volumes:
       - pnpm-store:/root/.local/share/pnpm/store
     commands:
@@ -42,7 +42,7 @@ steps:
 
   - name: Typecheck
     <<: *node-base
-    depends_on: []
+    depends_on: [Bootstrap]
     volumes:
       - pnpm-store:/root/.local/share/pnpm/store
     commands:
@@ -51,7 +51,7 @@ steps:
 
   - name: Test
     <<: *node-base
-    depends_on: []
+    depends_on: [Bootstrap]
     volumes:
       - pnpm-store:/root/.local/share/pnpm/store
     commands:
@@ -59,11 +59,12 @@ steps:
       - pnpm test
 
   # Copy only if the ported workflow notified on failure; needs SLACK_WEBHOOK_URL
-  # as a repo secret scoped away from pull_request.
+  # as a repo secret scoped away from pull_request. Executed, not sourced: the
+  # script is bash with `set -o pipefail`, which dash (the step shell) rejects.
   - name: Notify failure
     <<: *node-base
-    depends_on: []
+    depends_on: [Bootstrap]
     when:
       - status: [failure]
     commands:
-      - . .woodpecker/scripts/notify-slack.sh "lint/test"
+      - .woodpecker/scripts/notify-slack.sh "lint/test"

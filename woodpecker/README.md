@@ -55,6 +55,16 @@ Debian-based images) does not pass operands to a sourced script, so `$1` arrives
 empty and the install would silently run in the workspace root. `SETUP_PROJECT`
 (relative to the workspace) is the explicit alternative to `cd`.
 
+**Bootstrap is the only DAG root.** A step with no `depends_on` (or with
+`depends_on: []`) starts *concurrently* with the Bootstrap step, so it can try to
+source a script that has not been fetched yet and fail intermittently with
+`.: cannot open .woodpecker/scripts/...: No such file`. Wire every step that would
+otherwise be a root to `depends_on: [Bootstrap]`:
+
+```yaml
+    depends_on: [Bootstrap]   # not [] — [] runs in parallel with the fetch
+```
+
 `setup-repo.sh` activates pnpm via corepack (`PNPM_VERSION`, default `10.22.0`),
 then runs `pnpm install` once per lockfile hash. The stamp lives in
 `<project>/node_modules`, inside the workspace volume, so only the first step of a
@@ -73,7 +83,7 @@ installed with `--no-frozen-lockfile` and stamped on `package.json`.
 | `if:` / `on:` | `when:` list form (`when: [{event: [push, pull_request], branch: main}]`) |
 | path filters in `on.pull_request.paths` | `when: { event: [pull_request], path: [...] }` |
 | `secrets.X` | `from_secret: x` (lowercase snake_case; the env **key** keeps the name the app expects) |
-| `needs:` | `depends_on:` (any use makes the workflow a DAG ⇒ all step names must be unique; a job with no `needs` starts with `depends_on: []`) |
+| `needs:` | `depends_on:` (any use makes the workflow a DAG ⇒ all step names must be unique; a job with no `needs` starts with `depends_on: [Bootstrap]` — see below) |
 | `strategy.matrix` | `matrix:` |
 | `services:` | `services:` with the **same image digest** |
 | job artifacts (`upload-artifact`/`download-artifact`) | later steps in the same pipeline + a named volume |

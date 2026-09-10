@@ -25,7 +25,7 @@ steps:
 
   - name: Go
     image: golang:1.24-bookworm
-    depends_on: []
+    depends_on: [Bootstrap]
     commands:
       - go test ./...
 
@@ -35,7 +35,7 @@ steps:
   # this step's shell.
   - name: Desktop
     <<: *node-base
-    depends_on: []
+    depends_on: [Bootstrap]
     volumes:
       - pnpm-store:/root/.local/share/pnpm/store
     commands:
@@ -46,7 +46,7 @@ steps:
 
   - name: Native Storage
     image: rust:1-bookworm
-    depends_on: []
+    depends_on: [Bootstrap]
     commands:
       - apt-get update
       - apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
@@ -58,7 +58,7 @@ steps:
   # (not Woodpecker's config preprocessor) is written `$${VAR}`.
   - name: Deployment
     image: alpine:3.20
-    depends_on: []
+    depends_on: [Bootstrap]
     commands:
       - apk add --no-cache docker-cli docker-cli-compose jq
       - docker compose -f deploy/compose.yaml config --quiet
