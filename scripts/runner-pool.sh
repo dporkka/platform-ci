@@ -10,14 +10,15 @@ Usage:
   runner-pool.sh status
   runner-pool.sh remove
 
-Required for install:
+Required for all commands:
   REPO_URL            Repository URL, e.g. https://github.com/dporkka/apex
+
+Required for install:
   RUNNER_TOKEN        Short-lived runner registration token from GitHub
   RUNNER_ARCHIVE      Path to the official actions-runner linux-x64 tarball
   RUNNER_SHA256       SHA-256 shown by GitHub for that runner archive
 
 Required for remove:
-  REPO_URL
   RUNNER_TOKEN        Short-lived runner removal token from GitHub
 
 Optional:
@@ -51,21 +52,16 @@ case "$command" in
   *) usage >&2; fail "unknown command: $command" ;;
 esac
 
+require_env REPO_URL
+
 RUNNER_COUNT="${RUNNER_COUNT:-2}"
 [[ "$RUNNER_COUNT" =~ ^[1-9][0-9]*$ ]] || fail "RUNNER_COUNT must be a positive integer"
 
 POOL_ROOT="${POOL_ROOT:-$HOME/actions-runners}"
-
-if [[ "$command" != "status" ]]; then
-  require_env REPO_URL
-fi
-
-repo_url="${REPO_URL:-}"
+repo_url="$REPO_URL"
 repo_name="${repo_url##*/}"
 repo_name="${repo_name%.git}"
-if [[ -z "$repo_name" || "$repo_name" == "$repo_url" ]]; then
-  repo_name="${POOL_NAME:-runner}"
-fi
+[[ -n "$repo_name" && "$repo_name" != "$repo_url" ]] || fail "could not derive repository name from REPO_URL"
 
 POOL_NAME="${POOL_NAME:-${repo_name}-pool}"
 RUNNER_NAME_PREFIX="${RUNNER_NAME_PREFIX:-$(hostname -s)-${repo_name}}"
@@ -103,12 +99,14 @@ install_pool() {
   command -v sudo >/dev/null || fail "sudo is required to install runner services"
   [[ -f "$RUNNER_ARCHIVE" ]] || fail "runner archive not found: $RUNNER_ARCHIVE"
 
+  local actual_sha
   actual_sha="$(sha256sum "$RUNNER_ARCHIVE" | awk '{print $1}')"
   [[ "$actual_sha" == "$RUNNER_SHA256" ]] || fail "runner archive SHA-256 mismatch"
 
   mkdir -p "$pool_dir"
 
   local i dir name
+  local -a config_args
   for ((i = 1; i <= RUNNER_COUNT; i++)); do
     dir="$(runner_dir "$i")"
     name="${RUNNER_NAME_PREFIX}-${i}"
