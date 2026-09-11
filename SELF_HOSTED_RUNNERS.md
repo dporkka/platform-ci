@@ -29,7 +29,7 @@ Use separate install directories and runner services:
 └── nulang-cloud/
 ```
 
-One physical machine is sufficient. Each registration gives GitHub a repository-scoped runner endpoint.
+A GitHub self-hosted runner process accepts one job at a time. One registration per repository therefore gives each repository only one concurrent job even when the host has spare CPU/RAM.
 
 ## Registration
 
@@ -58,13 +58,73 @@ Repeat these steps for each private repository.
 
 Repeat from a separate directory for the other repositories.
 
+## Runner pools for concurrent jobs
+
+For repositories with multi-job CI, install more than one runner registration for the same repository. `scripts/runner-pool.sh` makes this repeatable while still using the official GitHub runner archive and short-lived registration/removal tokens.
+
+### Apex: initial two-worker pool
+
+On the Linux runner host:
+
+1. In `dporkka/apex`, open **Settings → Actions → Runners → New self-hosted runner → Linux → x64**.
+2. Download the official runner tarball using GitHub's displayed command and copy the displayed SHA-256 value.
+3. Export the short-lived registration token shown by GitHub. Do not commit it or put it in a shell script.
+4. From a checkout of `dporkka/platform-ci`, run:
+
+   ```bash
+   export REPO_URL='https://github.com/dporkka/apex'
+   export RUNNER_TOKEN='<short-lived-registration-token>'
+   export RUNNER_ARCHIVE="$HOME/Downloads/actions-runner-linux-x64-<version>.tar.gz"
+   export RUNNER_SHA256='<sha256-from-github>'
+   export RUNNER_COUNT=2
+   export RUNNER_NAME_PREFIX="$(hostname -s)-apex"
+
+   bash scripts/runner-pool.sh install
+   ```
+
+The script verifies the archive before extraction and creates isolated runner directories:
+
+```text
+~/actions-runners/apex-pool/
+├── runner-1/
+│   └── _work/
+└── runner-2/
+    └── _work/
+```
+
+Both registrations retain GitHub's standard `self-hosted`, `Linux`, and `X64` labels, so existing Apex workflows do not need to change. GitHub can then schedule two independent Apex jobs concurrently.
+
+Check the services with:
+
+```bash
+REPO_URL='https://github.com/dporkka/apex' \
+RUNNER_COUNT=2 \
+bash scripts/runner-pool.sh status
+```
+
+To remove the pool, generate a fresh short-lived removal token in the repository runner settings and run:
+
+```bash
+REPO_URL='https://github.com/dporkka/apex' \
+RUNNER_TOKEN='<short-lived-removal-token>' \
+RUNNER_COUNT=2 \
+DELETE_RUNNER_DIRS=true \
+bash scripts/runner-pool.sh remove
+```
+
+### Capacity limits
+
+Two runner processes can execute two jobs concurrently, but they still share the host kernel, CPU, RAM, disk, Docker daemon, and network. Start with `RUNNER_COUNT=2`; do not increase it until CPU saturation, memory pressure, swap, disk growth, Docker layer usage, and CI wall-clock have been measured.
+
+For stronger isolation, put the second worker on another VM/host or replace these persistent services with disposable OCI/VM workers. The workflow labels and runner-policy contract can remain unchanged during that migration.
+
 ## Host prerequisites
 
 The shared workload currently assumes the host can provide:
 
 - Git and curl
 - Docker Engine with the runner user able to use Docker
-- `sudo` for package installation
+- `sudo` for service installation and package installation
 - enough disk for Docker/Playwright/Rust build caches
 - outbound HTTPS to GitHub and the services under test
 
@@ -83,20 +143,27 @@ Log out/in after changing Docker group membership.
 
 ## Capacity policy
 
-A GitHub self-hosted runner process executes one job at a time, but three repository registrations on one physical machine can still receive three jobs concurrently. Start conservatively:
+A GitHub self-hosted runner process executes one job at a time. Multiple repository registrations on one physical machine can receive jobs concurrently, so capacity must be bounded deliberately.
 
-- keep workflow `cancel-in-progress: true` where safe
-- keep matrix `max-parallel: 1` on expensive build matrices
-- avoid running redundant workflows through affected-path gating
-- monitor RAM, swap, disk, Docker cache, and CPU during the first few runs
+Start conservatively:
 
-If the host becomes saturated, stop one or more repository runner services while heavy validation is running, or move the repositories into an organization and use one organization-level runner.
+- two workers for Apex while the host has capacity;
+- keep workflow `cancel-in-progress: true` where safe;
+- keep expensive build matrices bounded;
+- avoid redundant workflows through affected-path gating;
+- monitor RAM, swap, disk, Docker cache, CPU, queue time, and total CI wall-clock;
+- keep each registration in its own install directory and `_work` tree;
+- never allow a capacity failure to turn a required validation job into an optional/skipped job.
+
+If the host becomes saturated, stop one runner service or move the second worker to a separate machine. Do not weaken test/build gates to hide queue pressure.
 
 ## Better long-term topology
 
-An organization-level self-hosted runner can process jobs for multiple repositories in that organization. If Adacavo, Apex, and Nulang Cloud are later moved into a GitHub organization, replace the three repository registrations with one organization runner or runner group and grant it access only to the private repositories that need CI.
+An organization-level self-hosted runner can process jobs for multiple repositories in that organization. If Adacavo, Apex, and Nulang Cloud are later moved into a GitHub organization, replace repository-specific registrations with an organization runner group and grant it access only to the private repositories that need CI.
 
-Do **not** put untrusted public-fork pull requests on a self-hosted runner. Public repositories such as `nulang-org/nulang` should continue using GitHub-hosted runners unless you establish a hardened, isolated runner model.
+For Nulang Cloud's longer-term CI product, prefer ephemeral workers: provision an OCI container or microVM per job, register it just in time, run exactly one job, then destroy it. That keeps the existing GitHub-compatible webhook/job surface while improving isolation and allowing scale-to-zero.
+
+Do **not** put untrusted public-fork pull requests on a persistent self-hosted runner. Public repositories such as `nulang-org/nulang` should continue using GitHub-hosted runners unless you establish a hardened, isolated runner model.
 
 ## Zero-cost policy
 
