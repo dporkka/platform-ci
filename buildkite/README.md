@@ -37,7 +37,7 @@ Requirements: Bash, `curl`, and `jq`.
 export BUILDKITE_API_TOKEN='<token from secret manager>'
 export BUILDKITE_ORG_SLUG='<organization-slug>'
 
-./buildkite/provision.sh owner/repo-a owner/repo-b
+bash buildkite/provision.sh owner/repo-a owner/repo-b
 ```
 
 The script:
@@ -60,7 +60,7 @@ To verify what would be created without writing pipelines:
 
 ```bash
 BUILDKITE_BOOTSTRAP_DRY_RUN=1 \
-  ./buildkite/provision.sh owner/repo-a owner/repo-b
+  bash buildkite/provision.sh owner/repo-a owner/repo-b
 ```
 
 ## Migration order
