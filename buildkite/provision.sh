@@ -7,7 +7,7 @@ set -euo pipefail
 # Usage:
 #   export BUILDKITE_API_TOKEN='...'
 #   export BUILDKITE_ORG_SLUG='my-org'
-#   ./buildkite/provision.sh owner/repo [owner/repo ...]
+#   bash buildkite/provision.sh owner/repo [owner/repo ...]
 #
 # Optional:
 #   BUILDKITE_CLUSTER_ID=<uuid>
@@ -31,7 +31,7 @@ require_command jq
 : "${BUILDKITE_ORG_SLUG:?Set BUILDKITE_ORG_SLUG to the Buildkite organization slug}"
 
 if [[ "$#" -eq 0 ]]; then
-  echo "usage: $0 owner/repo [owner/repo ...]" >&2
+  echo "usage: bash $0 owner/repo [owner/repo ...]" >&2
   exit 2
 fi
 
