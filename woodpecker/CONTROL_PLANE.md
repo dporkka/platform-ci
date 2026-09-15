@@ -11,24 +11,48 @@ Run the diagnostic on the CI host or another machine that has network access to 
 ```bash
 bash woodpecker/scripts/diagnose-control-plane.sh \
   --server https://ci.adacavo.com \
-  --repo dporkka/apex
+  --repo dporkka/ochem-app
 ```
 
-The script is read-only by default. It checks:
-
-1. DNS resolution for the public Woodpecker host;
-2. the server `/healthz` endpoint (healthy server returns HTTP 204);
-3. Cloudflare Error 1033 and the local `cloudflared.service` state when the tunnel edge is unreachable;
-4. authenticated `woodpecker-cli info` access when the CLI is available;
-5. whether the target repository is present in Woodpecker's repository inventory;
-6. whether the target repository has queued pipeline work;
-7. local Podman/Docker Woodpecker server/agent container state when run on the host.
+The diagnostic is read-only by default. It checks DNS, `/healthz`, Cloudflare Error 1033, `cloudflared.service`, authenticated Woodpecker CLI access, repository inventory, queue state, and local Woodpecker containers.
 
 Use `--logs` only when needed because container logs can contain operational metadata:
 
 ```bash
-bash woodpecker/scripts/diagnose-control-plane.sh --logs --log-since 20m
+bash woodpecker/scripts/diagnose-control-plane.sh \
+  --server https://ci.adacavo.com \
+  --repo dporkka/ochem-app \
+  --logs --log-since 30m
 ```
+
+## Guarded recovery helper
+
+When diagnostics show a host/tunnel/container problem, use the recovery helper. It is **dry-run by default**:
+
+```bash
+bash woodpecker/scripts/recover-control-plane.sh \
+  --server https://ci.adacavo.com
+```
+
+Review the proposed actions first. The default applied mode only restarts `cloudflared.service` when it is inactive and starts stopped Woodpecker containers; it leaves already-running server/agent containers alone:
+
+```bash
+bash woodpecker/scripts/recover-control-plane.sh \
+  --server https://ci.adacavo.com \
+  --apply
+```
+
+If a pipeline is confirmed queued/pending but an otherwise-running agent is not claiming work, explicitly restart the agent:
+
+```bash
+bash woodpecker/scripts/recover-control-plane.sh \
+  --server https://ci.adacavo.com \
+  --apply --restart-agent
+```
+
+Use `--restart-server` only with stronger evidence that the Woodpecker server process itself is unhealthy. A server restart can affect active pipelines, so it is intentionally opt-in.
+
+The recovery helper never changes repository configuration, Woodpecker repository settings, tunnel configuration, or secrets.
 
 ## Interpreting failures
 
@@ -58,40 +82,42 @@ Also verify user lingering remains enabled so the tunnel is not tied to an inter
 loginctl show-user "$USER" -p Linger
 ```
 
-After recovery, do not stop at a successful service restart. Require:
+After recovery, require:
 
 ```bash
 curl -fsS -o /dev/null -w '%{http_code}\n' https://ci.adacavo.com/healthz
 ```
 
-to return `204`, then rerun `diagnose-control-plane.sh` and trigger a fresh repository event so Woodpecker posts a status for the exact new commit SHA.
+to return `204`, then rerun the diagnostic and trigger a fresh repository event so Woodpecker posts a status for the exact new commit SHA.
 
 ### `/healthz` is not 204 for another reason
 
-The public server/proxy path is unhealthy. Check the reverse proxy, Woodpecker server container/process, database connectivity, and the server logs before touching repository configuration.
-
-### Server is healthy but the repository is missing
-
-Synchronize repository inventory and verify the repository is active in Woodpecker. Do not recreate secrets until repository identity is confirmed.
+The public server/proxy path is unhealthy. Check the reverse proxy, Woodpecker server container/process, database connectivity, and server logs before touching repository configuration.
 
 ### Repository exists and work is queued indefinitely
 
 Inspect agent connectivity and capacity. Woodpecker agents connect to the server over gRPC; a healthy UI/API does not prove an agent is connected. Verify the agent container/process is running and that its labels/backend can accept the queued workflow.
 
+For this condition, prefer:
+
+```bash
+bash woodpecker/scripts/recover-control-plane.sh --apply --restart-agent
+```
+
+rather than changing application workflow YAML.
+
 ### Server is healthy, repository exists, queue is empty, but GitHub events create no pipelines
 
-The forge webhook is the leading suspect. Woodpecker 3.18 exposes a repository webhook repair command. After confirming the target repository, run the diagnostic's explicit repair mode:
+The forge webhook is the leading suspect. After confirming the target repository, run the diagnostic's explicit repair mode:
 
 ```bash
 bash woodpecker/scripts/diagnose-control-plane.sh \
   --server https://ci.adacavo.com \
-  --repo dporkka/apex \
+  --repo dporkka/ochem-app \
   --repair-webhook
 ```
 
 This is intentionally opt-in because it mutates forge integration state.
-
-After repair, generate one normal repository event (for example a PR synchronization) and verify that the exact head SHA receives a fresh `ci/woodpecker/...` commit status.
 
 ## Recovery acceptance gate
 
@@ -106,9 +132,7 @@ Do not call the incident resolved merely because the UI loads, the tunnel servic
 - Woodpecker posts the result to the exact GitHub commit SHA;
 - a complete representative repository pipeline reaches a terminal state based on executed checks.
 
-For Apex specifically, the representative recovery run should execute Go, Protobuf, Desktop, Native Storage, and Deployment before storage/migration PRs are promoted.
-
-For `ochem-app`, the representative recovery run must at minimum execute the `runner-smoke`, `quality`, and `backend-tests` steps on the exact candidate SHA before billing/auth or release-hardening PRs are promoted.
+For `ochem-app`, the representative recovery run must at minimum execute `runner-smoke`, `quality`, and `backend-tests` on the exact candidate SHA before billing/auth or release-hardening PRs are promoted.
 
 ## GitHub Actions is a separate control plane
 
