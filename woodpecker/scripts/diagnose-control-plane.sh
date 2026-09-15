@@ -51,6 +51,7 @@ host="${host%%:*}"
 
 failures=0
 warnings=0
+cloudflare_1033=0
 
 section() { printf '\n== %s ==\n' "$1"; }
 ok() { printf 'OK: %s\n' "$*"; }
@@ -81,13 +82,66 @@ if command -v curl >/dev/null 2>&1; then
   elif [[ -z "$http_code" || "$http_code" == "000" ]]; then
     fail "$server/healthz is unreachable"
   else
-    fail "$server/healthz returned HTTP $http_code"
+    if grep -Eqi 'Error[[:space:]]+1033|Cloudflare Tunnel error' "$body_file" 2>/dev/null; then
+      cloudflare_1033=1
+      fail "$server/healthz is behind Cloudflare but no healthy tunnel connector is available (Error 1033)"
+    else
+      fail "$server/healthz returned HTTP $http_code"
+    fi
     if [[ -s "$body_file" ]]; then
       sed -n '1,20p' "$body_file"
     fi
   fi
 else
   warn "curl is unavailable; skipping HTTP health check"
+fi
+
+if ((cloudflare_1033)); then
+  section "cloudflare tunnel"
+  echo "Cloudflare Error 1033 means the edge cannot reach an active connector for this tunnel."
+
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl --user is-active --quiet cloudflared.service 2>/dev/null; then
+      ok "cloudflared.service is active for the current user"
+      warn "the service is active but Cloudflare still reports 1033; inspect connector logs and token/tunnel health"
+    else
+      fail "cloudflared.service is not active for the current user"
+    fi
+
+    if systemctl --user show cloudflared.service >/dev/null 2>&1; then
+      systemctl --user show cloudflared.service \
+        --property=ActiveState,SubState,ExecMainStatus,Result \
+        --no-pager 2>/dev/null || true
+    else
+      warn "cloudflared.service is not installed in the current user's systemd manager"
+    fi
+  else
+    warn "systemctl is unavailable; cannot inspect the local cloudflared user service"
+  fi
+
+  tunnel_env="$HOME/.config/cloudflared/ci-adacavo.env"
+  if [[ -r "$tunnel_env" ]]; then
+    ok "$tunnel_env exists and is readable (contents intentionally not printed)"
+  else
+    warn "$tunnel_env is missing or unreadable on this host"
+  fi
+
+  if command -v loginctl >/dev/null 2>&1; then
+    linger="$(loginctl show-user "$USER" -p Linger --value 2>/dev/null || true)"
+    if [[ "$linger" == "yes" ]]; then
+      ok "systemd user lingering is enabled for $USER"
+    elif [[ -n "$linger" ]]; then
+      warn "systemd user lingering is $linger for $USER; tunnel service may stop after logout"
+    fi
+  fi
+
+  cat <<EOF_RECOVERY
+Recovery commands to run on the CI workstation after confirming the service belongs to this tunnel:
+  systemctl --user restart cloudflared.service
+  systemctl --user status cloudflared.service --no-pager
+  journalctl --user -u cloudflared.service --since "$log_since" --no-pager | tail -n 200
+Then rerun this diagnostic and require $server/healthz to return HTTP 204.
+EOF_RECOVERY
 fi
 
 section "woodpecker cli"
