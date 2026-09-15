@@ -188,34 +188,42 @@ else
 fi
 
 section "local containers"
-runtime=""
-if command -v podman >/dev/null 2>&1; then
-  runtime="podman"
-elif command -v docker >/dev/null 2>&1; then
-  runtime="docker"
-fi
+runtimes=()
+for candidate in docker podman; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    runtimes+=("$candidate")
+  fi
+done
 
-if [[ -n "$runtime" ]]; then
-  containers="$($runtime ps -a --format '{{.Names}}\t{{.Image}}\t{{.Status}}' 2>/dev/null | grep -i woodpecker || true)"
-  if [[ -n "$containers" ]]; then
+if ((${#runtimes[@]} > 0)); then
+  found=0
+  for runtime in "${runtimes[@]}"; do
+    containers="$("$runtime" ps -a --format '{{.Names}}\t{{.Image}}\t{{.Status}}' 2>/dev/null | grep -i woodpecker || true)"
+    if [[ -z "$containers" ]]; then
+      warn "no local containers with 'woodpecker' in name/image were found via $runtime"
+      continue
+    fi
+    found=1
+    printf '\n-- %s --\n' "$runtime"
     printf '%s\n' "$containers"
     while IFS=$'\t' read -r name image status; do
       [[ -n "$name" ]] || continue
       if [[ "$status" == Up* || "$status" == Running* ]]; then
-        ok "$name is running ($image)"
+        ok "$runtime:$name is running ($image)"
       else
-        fail "$name is not running: $status"
+        fail "$runtime:$name is not running: $status"
       fi
       if ((show_logs)); then
-        printf '\n-- %s logs since %s --\n' "$name" "$log_since"
-        $runtime logs --since "$log_since" "$name" 2>&1 | tail -n 200 || true
+        printf '\n-- %s:%s logs since %s --\n' "$runtime" "$name" "$log_since"
+        "$runtime" logs --since "$log_since" "$name" 2>&1 | tail -n 200 || true
       fi
     done <<< "$containers"
-  else
-    warn "no local containers with 'woodpecker' in name/image were found via $runtime"
+  done
+  if ((found == 0)); then
+    warn "no Woodpecker containers found in installed container runtimes"
   fi
 else
-  warn "neither podman nor docker is available; skipping local container checks"
+  warn "neither docker nor podman is available; skipping local container checks"
 fi
 
 if ((repair_webhook)); then
