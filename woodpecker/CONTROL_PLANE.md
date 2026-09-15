@@ -14,7 +14,7 @@ bash woodpecker/scripts/diagnose-control-plane.sh \
   --repo dporkka/ochem-app
 ```
 
-The diagnostic is read-only by default. It checks DNS, `/healthz`, Cloudflare Error 1033, `cloudflared.service`, authenticated Woodpecker CLI access, repository inventory, queue state, and local Woodpecker containers.
+The diagnostic is read-only by default. It checks DNS, `/healthz`, Cloudflare Error 1033, `cloudflared.service`, authenticated Woodpecker CLI access, repository inventory, queue state, and local Woodpecker containers in both Docker and Podman when those runtimes are installed.
 
 Use `--logs` only when needed because container logs can contain operational metadata:
 
@@ -34,7 +34,7 @@ bash woodpecker/scripts/recover-control-plane.sh \
   --server https://ci.adacavo.com
 ```
 
-Review the proposed actions first. The default applied mode only restarts `cloudflared.service` when it is inactive and starts stopped Woodpecker containers; it leaves already-running server/agent containers alone:
+Review the proposed actions first. The default applied mode only restarts `cloudflared.service` when it is inactive. It inspects both Docker and Podman, reports stopped Woodpecker containers, and leaves all containers untouched unless an explicit container action is requested:
 
 ```bash
 bash woodpecker/scripts/recover-control-plane.sh \
@@ -42,7 +42,17 @@ bash woodpecker/scripts/recover-control-plane.sh \
   --apply
 ```
 
-If a pipeline is confirmed queued/pending but an otherwise-running agent is not claiming work, explicitly restart the agent:
+A stopped Woodpecker container is **not** started automatically. After confirming that it is the intended active instance, start it explicitly with a runtime-qualified name:
+
+```bash
+bash woodpecker/scripts/recover-control-plane.sh \
+  --server https://ci.adacavo.com \
+  --apply --start-container docker:woodpecker-agent
+```
+
+`--start-container` is repeatable and also accepts `podman:<name>`. This avoids accidentally resurrecting retired or duplicate Woodpecker instances merely because their name or image contains `woodpecker`.
+
+If a pipeline is confirmed queued/pending but an otherwise-running agent is not claiming work, explicitly restart the running agent container(s) discovered across the installed runtimes:
 
 ```bash
 bash woodpecker/scripts/recover-control-plane.sh \
