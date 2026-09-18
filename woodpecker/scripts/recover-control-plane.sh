@@ -6,6 +6,7 @@ apply=0
 restart_agent=0
 restart_server=0
 start_containers=()
+expected_agent_hostname="bootstrap-ci-1"
 
 usage() {
   cat <<'USAGE'
@@ -16,7 +17,7 @@ Guarded Woodpecker control-plane recovery helper. Dry-run by default.
 Options:
   --server URL                   Public Woodpecker URL (default: https://ci.adacavo.com)
   --apply                        Execute requested recovery actions instead of printing them
-  --restart-agent                Restart running Woodpecker agent container(s)
+  --restart-agent                Restart only the stable bootstrap-ci-1 agent
   --restart-server               Restart running Woodpecker server container(s)
   --start-container RUNTIME:NAME Start one explicitly named stopped container; repeatable
   -h, --help                     Show this help
@@ -27,9 +28,11 @@ Default --apply behavior:
 - report stopped Woodpecker containers without starting them automatically;
 - leave already-running Woodpecker server/agent containers untouched.
 
-Use --restart-agent only when queued/pending work is not being claimed by an
-otherwise-running agent. Use --restart-server only with stronger evidence that
-the server process is unhealthy. Use --start-container only after identifying
+Use --restart-agent only when queued/pending work is not being claimed by the
+otherwise-running stable bootstrap agent. It will only restart a container whose
+WOODPECKER_HOSTNAME is exactly bootstrap-ci-1; legacy/ambiguous agent containers
+are never restarted by this flag. Use --restart-server only with stronger evidence
+that the server process is unhealthy. Use --start-container only after identifying
 the intended stopped instance from the dry-run/diagnostic output.
 
 No option changes repository configuration, secrets, tunnel configuration, or
@@ -65,6 +68,14 @@ run() {
     printf ' %q' "$@"
     printf '\n'
   fi
+}
+
+container_env_value() {
+  local runtime="$1"
+  local name="$2"
+  local key="$3"
+  "$runtime" inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$name" 2>/dev/null \
+    | awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }'
 }
 
 say "Woodpecker recovery target: $server"
@@ -128,6 +139,7 @@ if ((${#runtimes[@]} == 0)); then
   say "WARN: neither docker nor podman is available" >&2
 else
   found=0
+  stable_agent_found=0
   for runtime in "${runtimes[@]}"; do
     mapfile -t rows < <("$runtime" ps -a --format '{{.Names}}|{{.Image}}|{{.Status}}' 2>/dev/null | grep -i woodpecker || true)
     if ((${#rows[@]} == 0)); then
@@ -150,15 +162,31 @@ else
         continue
       fi
 
-      if ((is_agent && restart_agent)); then
-        run "$runtime" restart "$name"
-      elif ((is_server && restart_server)); then
+      if ((is_agent)); then
+        agent_hostname="$(container_env_value "$runtime" "$name" WOODPECKER_HOSTNAME || true)"
+        if [[ "$agent_hostname" == "$expected_agent_hostname" ]]; then
+          stable_agent_found=1
+          say "  stable bootstrap agent identity confirmed: $agent_hostname"
+          if ((restart_agent)); then
+            run "$runtime" restart "$name"
+          fi
+        else
+          say "  agent identity is '${agent_hostname:-unset}', not '$expected_agent_hostname'; leaving it untouched"
+        fi
+      fi
+
+      if ((is_server && restart_server)); then
         run "$runtime" restart "$name"
       fi
     done
   done
   if ((found == 0)); then
     say "WARN: no Woodpecker containers found in installed runtimes" >&2
+  fi
+  if ((restart_agent && stable_agent_found == 0)); then
+    say "ERROR: --restart-agent requested, but no running Woodpecker agent advertises WOODPECKER_HOSTNAME=$expected_agent_hostname" >&2
+    say "Reconcile the canonical bootstrap deployment before touching legacy/ambiguous agents." >&2
+    exit 1
   fi
 fi
 
