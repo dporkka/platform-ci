@@ -64,6 +64,14 @@ ok() { printf 'OK: %s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; warnings=$((warnings + 1)); }
 fail() { printf 'FAIL: %s\n' "$*" >&2; failures=$((failures + 1)); }
 
+container_env_value() {
+  local runtime="$1"
+  local name="$2"
+  local key="$3"
+  "$runtime" inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$name" 2>/dev/null \
+    | awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }'
+}
+
 section "configuration"
 printf 'server: %s\nrepo:   %s\n' "$server" "$repo"
 if [[ -n "$pipeline" ]]; then
@@ -255,6 +263,30 @@ if ((${#runtimes[@]} > 0)); then
       else
         fail "$runtime:$name is not running: $status"
       fi
+
+      lower_identity="$(printf '%s %s' "$name" "$image" | tr '[:upper:]' '[:lower:]')"
+      if [[ "$lower_identity" == *agent* ]]; then
+        agent_hostname="$(container_env_value "$runtime" "$name" WOODPECKER_HOSTNAME || true)"
+        agent_backend="$(container_env_value "$runtime" "$name" WOODPECKER_BACKEND || true)"
+        agent_single="$(container_env_value "$runtime" "$name" WOODPECKER_AGENT_SINGLE_WORKFLOW || true)"
+        agent_capacity="$(container_env_value "$runtime" "$name" WOODPECKER_MAX_WORKFLOWS || true)"
+        agent_retry="$(container_env_value "$runtime" "$name" WOODPECKER_RETRY_TIMEOUT || true)"
+
+        printf '  agent hostname=%s backend=%s single_workflow=%s max_workflows=%s retry_timeout=%s\n' \
+          "${agent_hostname:-unset}" "${agent_backend:-unset}" "${agent_single:-unset}" \
+          "${agent_capacity:-unset}" "${agent_retry:-unset}"
+
+        if [[ "$agent_hostname" == "bootstrap-ci-1" ]]; then
+          ok "$runtime:$name uses the stable bootstrap-ci-1 identity"
+        else
+          warn "$runtime:$name is a Woodpecker agent but does not advertise WOODPECKER_HOSTNAME=bootstrap-ci-1"
+        fi
+        [[ "$agent_backend" == "docker" ]] || warn "$runtime:$name does not explicitly use WOODPECKER_BACKEND=docker"
+        [[ "$agent_single" == "true" ]] || warn "$runtime:$name is not in single-workflow self-refresh mode"
+        [[ "$agent_capacity" == "1" ]] || warn "$runtime:$name does not have WOODPECKER_MAX_WORKFLOWS=1"
+        [[ "$agent_retry" == "0" ]] || warn "$runtime:$name does not have infinite server reconnect (WOODPECKER_RETRY_TIMEOUT=0)"
+      fi
+
       if ((show_logs)); then
         printf '\n-- %s:%s logs since %s --\n' "$runtime" "$name" "$log_since"
         "$runtime" logs --since "$log_since" "$name" 2>&1 | tail -n 200 || true
