@@ -6,6 +6,7 @@ repo="${WOODPECKER_REPO:-dporkka/apex}"
 repair_webhook=0
 show_logs=0
 log_since="${WOODPECKER_LOG_SINCE:-30m}"
+pipeline=""
 
 usage() {
   cat <<'USAGE'
@@ -18,6 +19,7 @@ Options:
   --repo OWNER/NAME     Repository to look for (default: $WOODPECKER_REPO or dporkka/apex)
   --logs                Print recent Woodpecker container logs (may contain operational metadata)
   --log-since DURATION  Container log window (default: 30m)
+  --pipeline NUMBER      Inspect one exact pipeline and its step states
   --repair-webhook      Run `woodpecker-cli repo repair OWNER/NAME` after diagnostics
   -h, --help            Show this help
 
@@ -38,6 +40,10 @@ while (($#)); do
     --log-since)
       [[ $# -ge 2 ]] || { echo "--log-since requires a value" >&2; exit 2; }
       log_since="$2"; shift 2 ;;
+    --pipeline)
+      [[ $# -ge 2 ]] || { echo "--pipeline requires a numeric pipeline number" >&2; exit 2; }
+      [[ "$2" =~ ^[0-9]+$ ]] || { echo "--pipeline requires a numeric pipeline number" >&2; exit 2; }
+      pipeline="$2"; shift 2 ;;
     --repair-webhook) repair_webhook=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -60,6 +66,9 @@ fail() { printf 'FAIL: %s\n' "$*" >&2; failures=$((failures + 1)); }
 
 section "configuration"
 printf 'server: %s\nrepo:   %s\n' "$server" "$repo"
+if [[ -n "$pipeline" ]]; then
+  printf 'pipeline: %s\n' "$pipeline"
+fi
 
 section "name resolution"
 if command -v getent >/dev/null 2>&1; then
@@ -182,6 +191,39 @@ if command -v woodpecker-cli >/dev/null 2>&1; then
   else
     warn "could not inspect Woodpecker pipeline queue"
     printf '%s\n' "$queue" >&2
+  fi
+
+  if [[ -n "$pipeline" ]]; then
+    section "pipeline $pipeline"
+
+    pipeline_info=""
+    if pipeline_info="$(woodpecker-cli --server "$server" pipeline show "$repo" "$pipeline" 2>&1)"; then
+      ok "pipeline $pipeline metadata is readable"
+      printf '%s\n' "$pipeline_info"
+    else
+      fail "could not read pipeline $pipeline metadata for $repo"
+      printf '%s\n' "$pipeline_info" >&2
+    fi
+
+    pipeline_steps=""
+    if pipeline_steps="$(woodpecker-cli --server "$server" pipeline ps "$repo" "$pipeline" 2>&1)"; then
+      ok "pipeline $pipeline step state is readable"
+      printf '%s\n' "$pipeline_steps"
+    else
+      fail "could not read pipeline $pipeline steps for $repo"
+      printf '%s\n' "$pipeline_steps" >&2
+    fi
+
+    if ((show_logs)); then
+      pipeline_logs=""
+      if pipeline_logs="$(woodpecker-cli --server "$server" pipeline log show "$repo" "$pipeline" 2>&1)"; then
+        ok "pipeline $pipeline logs are readable"
+        printf '%s\n' "$pipeline_logs" | tail -n 400
+      else
+        warn "could not read pipeline $pipeline logs for $repo"
+        printf '%s\n' "$pipeline_logs" >&2
+      fi
+    fi
   fi
 else
   warn "woodpecker-cli is unavailable; install it or run this script on the CI host"
