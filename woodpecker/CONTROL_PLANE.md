@@ -25,6 +25,33 @@ bash woodpecker/scripts/diagnose-control-plane.sh \
   --logs --log-since 30m
 ```
 
+When GitHub already identifies an exact Woodpecker pipeline number, inspect that
+pipeline directly rather than inferring its failure from the global queue:
+
+```bash
+bash woodpecker/scripts/diagnose-control-plane.sh \
+  --server https://ci.adacavo.com \
+  --repo dporkka/ochem-app \
+  --pipeline 17
+```
+
+This calls the Woodpecker 3.x CLI's `pipeline show` and `pipeline ps` commands,
+so the diagnostic reports the pipeline state and every step's state. Add
+`--logs` to request the pipeline logs as well:
+
+```bash
+bash woodpecker/scripts/diagnose-control-plane.sh \
+  --server https://ci.adacavo.com \
+  --repo dporkka/ochem-app \
+  --pipeline 17 \
+  --logs --log-since 60m
+```
+
+For a failed O-Chem pipeline, classify the first executed failure before editing
+application code: if `runner-smoke` never starts, investigate the agent/runtime;
+if it succeeds and `quality` fails, investigate the Node/frontend gate; if it
+succeeds and `backend-tests` fails, investigate Python/backend tests.
+
 ## Guarded recovery helper
 
 When diagnostics show a host/tunnel/container problem, use the recovery helper. It is **dry-run by default**:
