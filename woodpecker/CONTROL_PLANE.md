@@ -79,13 +79,29 @@ bash woodpecker/scripts/recover-control-plane.sh \
 
 `--start-container` is repeatable and also accepts `podman:<name>`. This avoids accidentally resurrecting retired or duplicate Woodpecker instances merely because their name or image contains `woodpecker`.
 
-If a pipeline is confirmed queued/pending but an otherwise-running agent is not claiming work, explicitly restart the running agent container(s) discovered across the installed runtimes:
+If a pipeline is confirmed queued/pending but the intended agent is not claiming work, first run the diagnostic and require the active deployment to advertise the canonical bootstrap identity and resilience settings:
+
+```text
+WOODPECKER_HOSTNAME=bootstrap-ci-1
+WOODPECKER_BACKEND=docker
+WOODPECKER_AGENT_SINGLE_WORKFLOW=true
+WOODPECKER_MAX_WORKFLOWS=1
+WOODPECKER_RETRY_TIMEOUT=0
+```
+
+Then the guarded recovery can restart **only** that stable agent:
 
 ```bash
 bash woodpecker/scripts/recover-control-plane.sh \
   --server https://ci.adacavo.com \
   --apply --restart-agent
 ```
+
+`--restart-agent` fails closed when no running agent container advertises
+`WOODPECKER_HOSTNAME=bootstrap-ci-1`. It does not restart older generated-hostname
+or otherwise ambiguous Woodpecker agents. If the stable agent is absent, reconcile
+the canonical Woodpecker deployment in `dporkka/nulang-cloud/deploy/woodpecker`
+before touching legacy containers.
 
 Use `--restart-server` only with stronger evidence that the Woodpecker server process itself is unhealthy. A server restart can affect active pipelines, so it is intentionally opt-in.
 
@@ -134,6 +150,11 @@ The public server/proxy path is unhealthy. Check the reverse proxy, Woodpecker s
 ### Repository exists and work is queued indefinitely
 
 Inspect agent connectivity and capacity. Woodpecker agents connect to the server over gRPC; a healthy UI/API does not prove an agent is connected. Verify the agent container/process is running and that its labels/backend can accept the queued workflow.
+
+The diagnostic now prints the local agent's hostname, backend, single-workflow
+mode, capacity, and reconnect timeout. Treat a running agent without
+`WOODPECKER_HOSTNAME=bootstrap-ci-1` as legacy/ambiguous infrastructure rather
+than restarting every container that happens to look like an agent.
 
 For this condition, prefer:
 
