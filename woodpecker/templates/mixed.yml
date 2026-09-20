@@ -5,6 +5,10 @@
 # variant exists for monorepos that mix toolchains (Go + Node desktop + Rust
 # native module + container definitions) and for the POSIX-ification patterns
 # below.
+labels:
+  platform: linux/amd64
+  pool: bootstrap-ci
+
 when:
   - event: [push, pull_request]
     branch: main
