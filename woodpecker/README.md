@@ -16,6 +16,28 @@ woodpecker/
   templates/*.yml          canonical skeletons: node, go, rust, python, mixed
 ```
 
+## Agent routing contract
+
+The canonical privileged bootstrap agent is defined in
+`dporkka/nulang-cloud/deploy/woodpecker` and advertises the mandatory label:
+
+```text
+!pool=bootstrap-ci
+```
+
+Because the leading `!` makes the label mandatory, every workflow intended for
+this agent must explicitly request:
+
+```yaml
+labels:
+  platform: linux/amd64
+  pool: bootstrap-ci
+```
+
+Do not omit the pool label from shared templates or diagnostic canaries. A valid
+workflow without `pool: bootstrap-ci` is intentionally ineligible for the
+privileged agent and can remain pending even while the agent is healthy.
+
 ## Bootstrap step
 
 First step of **every** pipeline in **every** repository. `curlimages/curl` cannot
@@ -96,7 +118,7 @@ with the lock, 1.
 | `timeout-minutes` | dropped (step- and workflow-level `timeout` are schema-invalid) |
 | `permissions:` / auto `GITHUB_TOKEN` | dropped; a PAT `from_secret` only where the job actually pushed |
 | `concurrency.cancel-in-progress` | `concurrency: { limit: 1, group: "<name>" }` |
-| `runs-on: [self-hosted, ...]` | dropped — the single agent picks everything up; `labels:` only for the GPU lane |
+| `runs-on: [self-hosted, ...]` | map to explicit Woodpecker `labels:`; bootstrap workflows require `platform: linux/amd64` and `pool: bootstrap-ci` |
 | `schedule:` | a cron registered out of band (`woodpecker-cli cron add`) |
 
 Retained on GitHub Actions rather than ported, because their steps are
