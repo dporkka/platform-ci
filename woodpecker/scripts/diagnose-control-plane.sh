@@ -282,7 +282,11 @@ if ((${#runtimes[@]} > 0)); then
           warn "$runtime:$name is a Woodpecker agent but does not advertise WOODPECKER_HOSTNAME=bootstrap-ci-1"
         fi
         [[ "$agent_backend" == "docker" ]] || warn "$runtime:$name does not explicitly use WOODPECKER_BACKEND=docker"
-        [[ "$agent_single" == "true" ]] || warn "$runtime:$name is not in single-workflow self-refresh mode"
+        if [[ -z "$agent_single" || "$agent_single" == "false" ]]; then
+          ok "$runtime:$name keeps a persistent agent process (single-workflow disabled)"
+        else
+          warn "$runtime:$name has WOODPECKER_AGENT_SINGLE_WORKFLOW=$agent_single; canonical bootstrap agents must keep it false/unset"
+        fi
         [[ "$agent_capacity" == "1" ]] || warn "$runtime:$name does not have WOODPECKER_MAX_WORKFLOWS=1"
         [[ "$agent_retry" == "0" ]] || warn "$runtime:$name does not have infinite server reconnect (WOODPECKER_RETRY_TIMEOUT=0)"
       fi
