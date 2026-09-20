@@ -84,10 +84,15 @@ If a pipeline is confirmed queued/pending but the intended agent is not claiming
 ```text
 WOODPECKER_HOSTNAME=bootstrap-ci-1
 WOODPECKER_BACKEND=docker
-WOODPECKER_AGENT_SINGLE_WORKFLOW=true
+WOODPECKER_AGENT_SINGLE_WORKFLOW=false/unset
 WOODPECKER_MAX_WORKFLOWS=1
 WOODPECKER_RETRY_TIMEOUT=0
 ```
+
+The canonical runtime contract lives in `dporkka/nulang-cloud/deploy/woodpecker`.
+The bootstrap agent must remain a persistent process: do **not** enable
+`WOODPECKER_AGENT_SINGLE_WORKFLOW`; that mode exits the agent after one workflow
+and is intended for externally recycled ephemeral workers.
 
 Then the guarded recovery can restart **only** that stable agent:
 
