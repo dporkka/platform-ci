@@ -5,6 +5,10 @@
 # Python minor version aligned with the repository's manifest
 # (pyproject.toml `requires-python` / .python-version), not with the
 # `actions/setup-python` tag in the source workflow.
+labels:
+  platform: linux/amd64
+  pool: bootstrap-ci
+
 when:
   - event: [push, pull_request]
     branch: main
