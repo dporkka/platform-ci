@@ -4,6 +4,10 @@
 # repository's own commands from the Actions workflow being ported. The Go
 # version must come from the repository's `go.mod` `go` directive, not from the
 # `actions/setup-go` tag in the source workflow.
+labels:
+  platform: linux/amd64
+  pool: bootstrap-ci
+
 when:
   - event: [push, pull_request]
     branch: main
