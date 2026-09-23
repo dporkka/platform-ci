@@ -5,6 +5,10 @@
 # version must come from the repository's `rust-toolchain.toml`; when it pins a
 # non-stable channel, pin the matching `rust:<ver>-bookworm` image here instead
 # of `rust:1-bookworm`.
+labels:
+  platform: linux/amd64
+  pool: bootstrap-ci
+
 when:
   - event: [push, pull_request]
     branch: main

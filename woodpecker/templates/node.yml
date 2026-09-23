@@ -10,6 +10,10 @@
 # fleet default. pnpm version comes from package.json `packageManager`; override
 # with `PNPM_VERSION: <ver>` in the step `environment:` only if it differs from
 # the script default.
+labels:
+  platform: linux/amd64
+  pool: bootstrap-ci
+
 when:
   - event: [push, pull_request]
     branch: main

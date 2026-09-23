@@ -283,9 +283,9 @@ if ((${#runtimes[@]} > 0)); then
         fi
         [[ "$agent_backend" == "docker" ]] || warn "$runtime:$name does not explicitly use WOODPECKER_BACKEND=docker"
         if [[ -z "$agent_single" || "$agent_single" == "false" ]]; then
-          ok "$runtime:$name remains persistent between workflows"
+          ok "$runtime:$name keeps a persistent agent process (single-workflow disabled)"
         else
-          fail "$runtime:$name has WOODPECKER_AGENT_SINGLE_WORKFLOW=$agent_single; single-workflow mode can strand queued pipelines"
+          warn "$runtime:$name has WOODPECKER_AGENT_SINGLE_WORKFLOW=$agent_single; canonical bootstrap agents must keep it false/unset"
         fi
         [[ "$agent_capacity" == "1" ]] || warn "$runtime:$name does not have WOODPECKER_MAX_WORKFLOWS=1"
         [[ "$agent_retry" == "0" ]] || warn "$runtime:$name does not have infinite server reconnect (WOODPECKER_RETRY_TIMEOUT=0)"
