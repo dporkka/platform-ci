@@ -84,10 +84,14 @@ If a pipeline is confirmed queued/pending but the intended agent is not claiming
 ```text
 WOODPECKER_HOSTNAME=bootstrap-ci-1
 WOODPECKER_BACKEND=docker
-WOODPECKER_AGENT_SINGLE_WORKFLOW=true
+WOODPECKER_AGENT_SINGLE_WORKFLOW=false
 WOODPECKER_MAX_WORKFLOWS=1
 WOODPECKER_RETRY_TIMEOUT=0
 ```
+
+The agent must remain persistent between workflows. Woodpecker's single-workflow
+mode exits the agent process after one workflow and can strand the next queued
+pipeline when the runtime does not immediately recreate a healthy connected agent.
 
 Then the guarded recovery can restart **only** that stable agent:
 
