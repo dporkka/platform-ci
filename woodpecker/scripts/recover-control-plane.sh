@@ -5,6 +5,7 @@ server="${WOODPECKER_SERVER:-https://ci.adacavo.com}"
 apply=0
 restart_agent=0
 restart_server=0
+restart_tunnel=0
 start_containers=()
 expected_agent_hostname="bootstrap-ci-1"
 
@@ -19,6 +20,7 @@ Options:
   --apply                        Execute requested recovery actions instead of printing them
   --restart-agent                Restart only the stable bootstrap-ci-1 agent
   --restart-server               Restart running Woodpecker server container(s)
+  --restart-tunnel               Restart cloudflared even when systemd reports it active
   --start-container RUNTIME:NAME Start one explicitly named stopped container; repeatable
   -h, --help                     Show this help
 
@@ -27,6 +29,10 @@ Default --apply behavior:
 - inspect both Docker and Podman when installed;
 - report stopped Woodpecker containers without starting them automatically;
 - leave already-running Woodpecker server/agent containers untouched.
+
+Use --restart-tunnel when Cloudflare reports an unreachable tunnel connector even
+though cloudflared.service is still marked active. This is explicit because an
+active service may be healthy and should not be bounced on every recovery run.
 
 Use --restart-agent only when queued/pending work is not being claimed by the
 otherwise-running stable bootstrap agent. It will only restart a container whose
@@ -48,6 +54,7 @@ while (($#)); do
     --apply) apply=1; shift ;;
     --restart-agent) restart_agent=1; shift ;;
     --restart-server) restart_server=1; shift ;;
+    --restart-tunnel) restart_tunnel=1; shift ;;
     --start-container)
       [[ $# -ge 2 ]] || { echo "--start-container requires RUNTIME:NAME" >&2; exit 2; }
       start_containers+=("$2"); shift 2 ;;
@@ -89,7 +96,12 @@ say
 say "== cloudflared user service =="
 if command -v systemctl >/dev/null 2>&1; then
   if systemctl --user is-active --quiet cloudflared.service; then
-    say "cloudflared.service is active; leaving it running"
+    if ((restart_tunnel)); then
+      say "cloudflared.service is active; explicit tunnel restart requested"
+      run systemctl --user restart cloudflared.service
+    else
+      say "cloudflared.service is active; leaving it running"
+    fi
   else
     say "cloudflared.service is not active"
     run systemctl --user restart cloudflared.service
