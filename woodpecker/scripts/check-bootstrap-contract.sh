@@ -28,5 +28,6 @@ grep -Fq 'pool: bootstrap-ci' woodpecker/README.md ||
   fail 'Woodpecker README must document mandatory bootstrap routing'
 
 bash woodpecker/scripts/recover-control-plane.test.sh
+bash woodpecker/scripts/queue-position.test.sh
 
 printf 'Woodpecker bootstrap contract is internally consistent.\n'
