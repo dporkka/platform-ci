@@ -7,6 +7,7 @@ repair_webhook=0
 show_logs=0
 log_since="${WOODPECKER_LOG_SINCE:-30m}"
 pipeline=""
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<'USAGE'
@@ -185,16 +186,46 @@ if command -v woodpecker-cli >/dev/null 2>&1; then
     printf '%s\n' "$repos" >&2
   fi
 
-  if queue="$(woodpecker-cli --server "$server" pipeline queue 2>&1)"; then
+  queue_format='{{ .FullName }}|{{ .Number }}|{{ .Status }}|{{ .Commit }}'
+  if queue="$(woodpecker-cli --server "$server" pipeline queue --format "$queue_format" 2>&1)"; then
     if [[ -n "$queue" ]]; then
-      printf '%s\n' "$queue"
-      if printf '%s\n' "$queue" | grep -F "$repo" >/dev/null; then
-        warn "$repo has queued Woodpecker work; inspect agent connectivity/capacity"
-      else
-        ok "no queued entry for $repo"
-      fi
+      while IFS='|' read -r queue_repo queue_number queue_status queue_commit; do
+        [[ -n "$queue_repo" ]] || continue
+        printf '%s #%s status=%s commit=%s\n' "$queue_repo" "$queue_number" "$queue_status" "$queue_commit"
+      done <<<"$queue"
+    fi
+
+    if [[ -x "$script_dir/queue-position.sh" ]]; then
+      queue_analysis="$(printf '%s\n' "$queue" | "$script_dir/queue-position.sh" "$repo" "$pipeline")"
+      queue_depth="$(awk -F= '$1 == "queue_depth" { print $2 }' <<<"$queue_analysis")"
+      repo_queue_depth="$(awk -F= '$1 == "repo_queue_depth" { print $2 }' <<<"$queue_analysis")"
+      target_position="$(awk -F= '$1 == "target_position" { print $2 }' <<<"$queue_analysis")"
+      queue_classification="$(awk -F= '$1 == "classification" { print $2 }' <<<"$queue_analysis")"
+
+      printf 'queue depth: %s; %s queued: %s\n' "$queue_depth" "$repo" "$repo_queue_depth"
+
+      case "$queue_classification" in
+        empty)
+          ok "Woodpecker queue is empty"
+          ;;
+        backlog)
+          warn "$repo pipeline $pipeline is queued at global position $target_position/$queue_depth; this is serialized backlog ahead of the target"
+          ;;
+        next)
+          warn "$repo pipeline $pipeline is first in the queue; if it remains pending, inspect agent eligibility/health rather than repository code"
+          ;;
+        not-queued)
+          warn "$repo pipeline $pipeline is not present in the queue snapshot; inspect its pipeline/step state directly"
+          ;;
+        repo-queued)
+          warn "$repo has $repo_queue_depth queued pipeline(s) out of $queue_depth total"
+          ;;
+        repo-not-queued)
+          ok "no queued entry for $repo"
+          ;;
+      esac
     else
-      ok "Woodpecker queue is empty"
+      warn "queue classifier is missing or not executable: $script_dir/queue-position.sh"
     fi
   else
     warn "could not inspect Woodpecker pipeline queue"

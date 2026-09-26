@@ -53,4 +53,14 @@ out="$("$SCRIPT" dporkka/nulang-cloud <"$tmp/repo.txt")"
 grep -Fx 'repo_queue_depth=2' <<<"$out" >/dev/null
 grep -Fx 'classification=repo-queued' <<<"$out" >/dev/null
 
+DIAGNOSE="$ROOT/woodpecker/scripts/diagnose-control-plane.sh"
+grep -Fq 'pipeline queue --format "$queue_format"' "$DIAGNOSE" || {
+  printf 'FAIL: diagnostics must request stable formatted queue output\n' >&2
+  exit 1
+}
+grep -Fq 'queue-position.sh' "$DIAGNOSE" || {
+  printf 'FAIL: diagnostics must use the queue position classifier\n' >&2
+  exit 1
+}
+
 printf 'Woodpecker queue position classifier behavior is correct.\n'
