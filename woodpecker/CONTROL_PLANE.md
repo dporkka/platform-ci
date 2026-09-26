@@ -69,6 +69,18 @@ bash woodpecker/scripts/recover-control-plane.sh \
   --apply
 ```
 
+If Cloudflare reports an unreachable tunnel connector while `cloudflared.service`
+still shows active, explicitly restart only the tunnel connector:
+
+```bash
+bash woodpecker/scripts/recover-control-plane.sh \
+  --server https://ci.adacavo.com \
+  --apply --restart-tunnel
+```
+
+The flag is deliberately opt-in: a healthy active tunnel is left untouched by the
+default recovery path.
+
 A stopped Woodpecker container is **not** started automatically. After confirming that it is the intended active instance, start it explicitly with a runtime-qualified name:
 
 ```bash
@@ -127,10 +139,16 @@ systemctl --user status cloudflared.service --no-pager
 journalctl --user -u cloudflared.service --since "30m" --no-pager | tail -n 200
 ```
 
-If the service is inactive, failed, or disconnected, restart it:
+If the service is inactive, failed, or disconnected, restart it directly or use
+the guarded helper. When systemd reports the service active but Cloudflare still
+reports 1033/530, prefer the explicit helper flag so the action is recorded as an
+intentional active-connector restart:
 
 ```bash
-systemctl --user restart cloudflared.service
+bash woodpecker/scripts/recover-control-plane.sh \
+  --server https://ci.adacavo.com \
+  --apply --restart-tunnel
+
 systemctl --user status cloudflared.service --no-pager
 ```
 
