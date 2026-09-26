@@ -27,4 +27,4 @@ grep -Fq 'false/unset' woodpecker/CONTROL_PLANE.md ||
 grep -Fq 'pool: bootstrap-ci' woodpecker/README.md ||
   fail 'Woodpecker README must document mandatory bootstrap routing'
 
-printf 'Woodpecker bootstrap contract is internally consistent.\n'
+bash woodpecker/scripts/recover-control-plane.test.sh\n\nprintf 'Woodpecker bootstrap contract is internally consistent.\n'
