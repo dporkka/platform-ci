@@ -187,6 +187,55 @@ bash woodpecker/scripts/recover-control-plane.sh --apply --restart-agent
 
 rather than changing application workflow YAML.
 
+### Superseded pull-request pipelines remain queued
+
+Woodpecker has a repository-level `cancel_previous_pipeline_events` setting.
+For this bootstrap installation, pull-request and push pipelines should include
+`pull_request` and `push` so a newer pipeline for the same context cancels the
+older one instead of amplifying the single-slot queue.
+
+Inspect the persisted repository setting with the guarded helper. It is dry-run
+by default and requires an explicit Woodpecker API token:
+
+```bash
+export WOODPECKER_TOKEN='<token from your Woodpecker account>'
+
+bash woodpecker/scripts/ensure-cancel-previous.sh \
+  --server https://ci.adacavo.com \
+  --repo-id 14
+```
+
+The helper preserves any additional configured events. If it reports
+`status=drift`, apply only the repository-setting repair and verify it:
+
+```bash
+bash woodpecker/scripts/ensure-cancel-previous.sh \
+  --server https://ci.adacavo.com \
+  --repo-id 14 \
+  --apply
+```
+
+Do not print or commit `WOODPECKER_TOKEN`. Repository ID `14` is the current
+Nulang Cloud Woodpecker repository ID; for another repository, use the ID from
+its Woodpecker pipeline URL or authenticated repository metadata.
+
+Repairing the setting affects newly triggered pipelines. It does not
+retroactively remove pipelines already queued before the repair. After verifying
+that an older queued pipeline is superseded by a newer exact-head candidate,
+cancel only that known pipeline explicitly, for example:
+
+```bash
+woodpecker-cli --server https://ci.adacavo.com \
+  pipeline stop dporkka/nulang-cloud 3055
+
+woodpecker-cli --server https://ci.adacavo.com \
+  pipeline stop dporkka/nulang-cloud 3057
+```
+
+Keep the newest qualification pipeline (currently 3062) intact. Re-run the queue
+diagnostic afterward and require its position to advance rather than triggering
+another Nulang Cloud commit.
+
 ### Server is healthy, repository exists, queue is empty, but GitHub events create no pipelines
 
 The forge webhook is the leading suspect. After confirming the target repository, run the diagnostic's explicit repair mode:
