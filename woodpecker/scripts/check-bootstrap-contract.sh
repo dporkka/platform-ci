@@ -29,5 +29,6 @@ grep -Fq 'pool: bootstrap-ci' woodpecker/README.md ||
 
 bash woodpecker/scripts/recover-control-plane.test.sh
 bash woodpecker/scripts/queue-position.test.sh
+bash woodpecker/scripts/ensure-cancel-previous.test.sh
 
 printf 'Woodpecker bootstrap contract is internally consistent.\n'
