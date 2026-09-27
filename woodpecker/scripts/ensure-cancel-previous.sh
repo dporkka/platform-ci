@@ -65,7 +65,7 @@ fetch_repo() {
 }
 
 analyze_repo() {
-  python3 - "$repo_id" <<'PY'
+  python3 -c '
 import json
 import sys
 
@@ -93,7 +93,7 @@ print("current_events=" + ",".join(events))
 print("desired_events=" + ",".join(desired))
 print("needs_repair=" + ("true" if desired != events else "false"))
 print("payload=" + json.dumps({"cancel_previous_pipeline_events": desired}, separators=(",", ":")))
-PY
+' "$repo_id"
 }
 
 repo_json="$(fetch_repo)"
