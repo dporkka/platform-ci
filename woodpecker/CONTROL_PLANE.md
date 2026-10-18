@@ -52,6 +52,36 @@ application code: if `runner-smoke` never starts, investigate the agent/runtime;
 if it succeeds and `quality` fails, investigate the Node/frontend gate; if it
 succeeds and `backend-tests` fails, investigate Python/backend tests.
 
+## Identify the earliest failed step without rerunning CI
+
+For an already failed pipeline, the **read-only** failure helper identifies the
+first failed step that actually started, ordered by start timestamp, and avoids
+downloading logs unless expressly requested:
+
+```bash
+bash woodpecker/scripts/first-failed-step.sh \
+  --server https://ci.adacavo.com \
+  --repo dporkka/websyt.dev \
+  --pipeline 499
+```
+
+To retrieve one best-effort-redacted error-line candidate from that step only:
+
+```bash
+bash woodpecker/scripts/first-failed-step.sh \
+  --server https://ci.adacavo.com \
+  --repo dporkka/websyt.dev \
+  --pipeline 499 --show-log-excerpt
+```
+
+Run it on the trusted host with an authenticated Woodpecker 3.x CLI context.
+The helper never starts, restarts, or replays a pipeline. An error candidate is
+**not** confirmation of the root cause; inspect the selected step's complete
+logs locally. Redaction is best effort, so manually review output before
+sharing it outside the trusted host. If the CLI cannot access the pipeline,
+repair access first rather than assuming a particular application failure.
+Offline parser tests: `bash woodpecker/scripts/first-failed-step.test.sh`.
+
 ## Guarded recovery helper
 
 When diagnostics show a host/tunnel/container problem, use the recovery helper. It is **dry-run by default**:
