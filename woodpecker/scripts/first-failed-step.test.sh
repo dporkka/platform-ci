@@ -23,7 +23,7 @@ if [[ "${1:-}" == pipeline && "${2:-}" == ps ]]; then
     *) exit 70 ;;
   esac
 elif [[ "${1:-}" == pipeline && "${2:-}" == log && "${3:-}" == show ]]; then
-  printf '%s\n' 'starting command' 'Error: failed module compilation' 'token=woodpecker_not_a_secret'
+  printf '%s\n' 'starting command' 'Error: failed module compilation token=woodpecker_not_a_secret'
 else
   echo "Unexpected woodpecker-cli command" >&2
   exit 71
