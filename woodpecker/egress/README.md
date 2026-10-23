@@ -12,6 +12,9 @@ a private GitHub repository.
   address, `82.197.67.39/32`. Rootless Podman source addresses are NATed to
   that host address when crossing to Docker-private bridge listeners.
 - Permit HTTP CONNECT to port **443 only**, for explicit domains in `ALLOWED`.
+  The Go validation matrix requires the exact `proxy.golang.org` module endpoint
+  and `sum.golang.org` checksum endpoint. Do not introduce wildcard hosts or
+  disable Go checksum verification.
 - Do not log request bodies, intercept TLS, expose the proxy publicly, or turn
   the bridge into a generic outbound HTTP proxy.
 - Run under the existing unprivileged `woodpecker-github-egress.service` unit;
@@ -37,7 +40,19 @@ behavior without making external network requests.
 ## Controlled deployment
 
 Deploy only after verifying that no jobs have live connections to the egress
-bridge. On the CI host:
+bridge. First run the read-only source policy preflight using the **current live
+file** and the proposed file (either on the CI host or with a securely retrieved
+copy of the live source). It must report that only the two exact Go destinations
+are added and no proxy behavior changes:
+
+```sh
+python3 woodpecker/egress/check_deployment.py \
+  --deployed /opt/woodpecker/egress-proxy/github_connect.py \
+  --candidate woodpecker/egress/github_connect.py
+```
+
+If the preflight fails, investigate drift before changing the live service.
+Only deploy during an observed idle window. On the CI host:
 
 ```sh
 sudo ss -Htn state established '( sport = :3188 )'
