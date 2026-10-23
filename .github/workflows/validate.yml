@@ -40,6 +40,10 @@ jobs:
           done
       - name: Validate Woodpecker bootstrap contract
         run: bash woodpecker/scripts/check-bootstrap-contract.sh
+      - name: Test private GitHub egress allowlist
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s woodpecker/egress -p 'test_*.py' -v
 
   smoke-detect:
     name: Reusable detect smoke test
