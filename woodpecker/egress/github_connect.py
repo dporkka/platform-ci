@@ -17,7 +17,16 @@ import threading
 NETWORKS = tuple(ipaddress.ip_network(f"172.{octet}.0.0/16") for octet in range(17, 32)) + (
     ipaddress.ip_network("82.197.67.39/32"),
 )
-ALLOWED = frozenset(("api.github.com", "github.com", "codeload.github.com", "raw.githubusercontent.com", "registry.npmjs.org", "auth.docker.io", "registry-1.docker.io", "static.rust-lang.org", "dl-cdn.alpinelinux.org", "index.crates.io", "static.crates.io", "release-assets.githubusercontent.com", "fonts.googleapis.com", "fonts.gstatic.com", "mirror.gcr.io"))
+ALLOWED = frozenset((
+    "api.github.com", "github.com", "codeload.github.com",
+    "raw.githubusercontent.com", "release-assets.githubusercontent.com",
+    "registry.npmjs.org", "auth.docker.io", "registry-1.docker.io",
+    "static.rust-lang.org", "dl-cdn.alpinelinux.org",
+    "index.crates.io", "static.crates.io",
+    "fonts.googleapis.com", "fonts.gstatic.com", "mirror.gcr.io",
+    # Exact Go module and integrity endpoints; no wildcard or arbitrary hosts.
+    "proxy.golang.org", "sum.golang.org",
+))
 CONNECT_LINE = re.compile(rb"CONNECT ([A-Za-z0-9.-]+):443 HTTP/1\.[01]\r?\n")
 
 class Handler(socketserver.BaseRequestHandler):
