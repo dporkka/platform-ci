@@ -29,6 +29,23 @@ class ProxyPolicyTests(unittest.TestCase):
         self.assertIsNotNone(proxy.CONNECT_LINE.fullmatch(b"CONNECT github.com:443 HTTP/1.1\r\n"))
         self.assertIsNone(proxy.CONNECT_LINE.fullmatch(b"CONNECT github.com:80 HTTP/1.1\r\n"))
 
+    def test_go_module_hosts_use_restricted_https_connect(self):
+        # Go 1.26/1.27 CI resolves modules through the module proxy and
+        # validates integrity through the checksum database. No wildcard is
+        # necessary to permit those two trusted origins.
+        for hostname in ("proxy.golang.org", "sum.golang.org"):
+            result, outbound = self._request(
+                f"CONNECT {hostname}:443 HTTP/1.1\r\nHost: {hostname}\r\n\r\n".encode()
+            )
+            self.assertIn(b"502 Bad Gateway", result, hostname)
+            self.assertEqual(outbound, 1, hostname)
+        result, outbound = self._request(
+            b"CONNECT proxy.golang.org.evil.example:443 HTTP/1.1\r\n"
+            b"Host: proxy.golang.org.evil.example\r\n\r\n"
+        )
+        self.assertIn(b"403 Forbidden", result)
+        self.assertEqual(outbound, 0)
+
     def test_service_listens_only_on_private_bridge_addresses(self):
         source = SRC.read_text()
         self.assertIn('Server(("172.18.0.1", 3188)', source)
