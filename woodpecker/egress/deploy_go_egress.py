@@ -127,21 +127,27 @@ def restart_service() -> None:
     subprocess.run(["systemctl", "is-active", "--quiet", SERVICE], check=True, timeout=8)
 
 
-def _connect_status(host: str, port: int = 443) -> bytes:
-    with socket.create_connection(("172.18.0.1", 3188), timeout=7) as conn:
+BRIDGE_LISTENERS = ("172.17.0.1", "172.18.0.1")
+
+
+def _connect_status(host: str, port: int = 443, bridge_ip: str = "172.18.0.1") -> bytes:
+    with socket.create_connection((bridge_ip, 3188), timeout=7) as conn:
         conn.settimeout(12)
         conn.sendall(f"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}\r\n\r\n".encode())
         return conn.recv(256).split(b"\r\n", 1)[0]
 
 
 def probe_service() -> None:
-    for host in ("proxy.golang.org", "sum.golang.org", "github.com"):
-        if not _connect_status(host).startswith(b"HTTP/1.1 200 "):
-            raise RuntimeError(f"post-restart CONNECT check failed for {host}")
-    if not _connect_status("unlisted.example").startswith(b"HTTP/1.1 403 "):
-        raise RuntimeError("post-restart unknown-host deny check failed")
-    if not _connect_status("proxy.golang.org", 80).startswith(b"HTTP/1.1 403 "):
-        raise RuntimeError("post-restart non-443 deny check failed")
+    # Both Docker-private bridge listeners must implement the same allow/deny
+    # policy. A healthy listener must not hide a failed or permissive sibling.
+    for bridge_ip in BRIDGE_LISTENERS:
+        for host in ("proxy.golang.org", "sum.golang.org", "github.com"):
+            if not _connect_status(host, bridge_ip=bridge_ip).startswith(b"HTTP/1.1 200 "):
+                raise RuntimeError(f"post-restart CONNECT check failed for {host} on {bridge_ip}")
+        if not _connect_status("unlisted.example", bridge_ip=bridge_ip).startswith(b"HTTP/1.1 403 "):
+            raise RuntimeError(f"post-restart unknown-host deny check failed on {bridge_ip}")
+        if not _connect_status("proxy.golang.org", 80, bridge_ip=bridge_ip).startswith(b"HTTP/1.1 403 "):
+            raise RuntimeError(f"post-restart non-443 deny check failed on {bridge_ip}")
 
 
 def main() -> int:
