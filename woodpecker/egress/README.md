@@ -74,7 +74,8 @@ operator acknowledgement when applying, an existing root-owned regular
 mode-0644 live file, and refuses to overwrite an existing backup. The quiet
 window only samples established connections: it is **not** a substitute for
 stopping new CI job admission and coordinating a maintenance window. The helper
-stages an atomic source-file replacement; restarts
+rechecks that the live source has not been edited or replaced during the
+ten-second quiet window; stages an atomic source-file replacement; restarts
 **only** `woodpecker-github-egress.service`; and verifies positive CONNECT
 responses for `proxy.golang.org`/`sum.golang.org` and negative responses for
 unknown hosts and non-443 requests. It retains

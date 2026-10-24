@@ -86,6 +86,22 @@ def deploy(candidate: bytes, live: Path, *, sessions, restart, probe,
     ensure_idle(sessions)
     sleep(5)
     ensure_idle(sessions)
+    # The source could be edited or swapped while CI traffic drains. Do not
+    # replace a different operator's change using an obsolete before-image.
+    # This is a best-effort check, not an atomic file-system transaction.
+    try:
+        now = live.lstat()
+        unchanged = (
+            stat.S_ISREG(now.st_mode)
+            and (now.st_dev, now.st_ino, now.st_mtime_ns, now.st_size, now.st_mode)
+            == (original_stat.st_dev, original_stat.st_ino,
+                original_stat.st_mtime_ns, original_stat.st_size, original_stat.st_mode)
+            and live.read_bytes() == original
+        )
+    except OSError:
+        unchanged = False
+    if not unchanged:
+        raise ValueError("live proxy changed during quiet window; restart preflight")
     _backup(live, original, stat.S_IMODE(original_stat.st_mode))
     changed = False
     try:
