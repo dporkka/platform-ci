@@ -52,27 +52,87 @@ python3 woodpecker/egress/check_deployment.py \
 ```
 
 If the preflight fails, investigate drift before changing the live service.
-Only deploy during an observed idle window. On the CI host:
+Only deploy during an operator-approved idle maintenance window, with
+Woodpecker jobs quiesced so no new CONNECT sessions can start. On the CI host,
+from a trusted checkout of the reviewed source:
 
 ```sh
-sudo ss -Htn state established '( sport = :3188 )'
-sudo cp -a /opt/woodpecker/egress-proxy/github_connect.py \
-  /opt/woodpecker/egress-proxy/github_connect.py.pre-update
-sudo install -o root -g root -m 0644 woodpecker/egress/github_connect.py \
-  /opt/woodpecker/egress-proxy/github_connect.py
-sudo python3 -m py_compile /opt/woodpecker/egress-proxy/github_connect.py
-sudo systemctl restart woodpecker-github-egress.service
-sudo systemctl is-active woodpecker-github-egress.service
-sudo ss -lnt | grep ':3188 '
+# Read-only preflight; runs without root and makes no service changes.
+python3 woodpecker/egress/deploy_go_egress.py \
+  --candidate woodpecker/egress/github_connect.py
+
+# Authorized operator only; do not run while CI workflows are active.
+sudo python3 woodpecker/egress/deploy_go_egress.py \
+  --candidate woodpecker/egress/github_connect.py \
+  --apply --confirm-ci-quiesced
 ```
 
-If the service fails, restore the saved file and restart it. Follow the change
-with a restricted CONNECT probe **from a rootless Podman container** and a live
-Woodpecker checkout. A successful unauthenticated connection to a private GitHub
-repository reaches an authentication error; it does not need to fetch source.
+The one-off helper pins the reviewed candidate Git blob; checks that only the
+two exact Go HTTPS destinations are added; checks for active CONNECT sessions
+over a ten-second quiet window; requires an explicit `--confirm-ci-quiesced`
+operator acknowledgement when applying, an existing root-owned regular
+mode-0644 live file, and refuses to overwrite an existing backup. The quiet
+window only samples established connections: it is **not** a substitute for
+stopping new CI job admission and coordinating a maintenance window. The helper
+rechecks that the live source has not been edited or replaced during the
+ten-second quiet window; stages an atomic source-file replacement; restarts
+**only** `woodpecker-github-egress.service`; and verifies positive CONNECT
+responses for `proxy.golang.org`/`sum.golang.org` and negative responses for
+unknown hosts and non-443 requests **on both Docker-private listeners**
+(`172.17.0.1:3188` and `172.18.0.1:3188`). A failure on either listener
+triggers rollback. It retains
+`github_connect.py.before-go-update` beside the live file. If restart or
+probes fail, it restores the original policy and restarts the same service.
+If automatic rollback also fails, treat this as a critical incident and use
+the saved backup under an authorized recovery procedure. This script neither
+grants privileges nor pauses CI pipelines for the operator.
+
+After success, independently verify a restricted CONNECT probe **from a
+rootless Podman workflow container** and a real Woodpecker Go-module download
+and checksum test. Then run the full Go 1.26/1.27 PostgreSQL/PostGIS matrix and
+hosted restore drill. Never infer green hosted checks from proxy health alone.
 
 October 23, 2026 live verification: the exact /32 patch passed the restricted
 proxy CONNECT probe and Websyt PR #299's dedicated `backup-recovery` workflow
 completed with a successful checkout, Restic integrity check, and encrypted
 restore smoke test. The corresponding production source was backed up at
 `/opt/woodpecker/egress-proxy/github_connect.py.bak-before-rootless-20261023`.
+
+
+## Post-deployment Go runner canary (read-only)
+
+After the authorized, quiesced rollout, run the committed
+`verify_runner_go_egress.py` **inside each actual Woodpecker Go validation
+container** (Go 1.26 and Go 1.27), using a trusted checkout of platform-ci.
+A host-only probe is insufficient evidence of runner access:
+
+```sh
+# Inside each Go image, after the approved proxy rollout:
+python3 woodpecker/egress/verify_runner_go_egress.py
+```
+
+The script accepts only `HTTPS_PROXY=http://172.17.0.1:3188` or
+`http://172.18.0.1:3188`; it checks CONNECT **200** for the two exact Go
+module and checksum origins plus GitHub, and CONNECT **403** for an unknown
+origin and non-443 traffic. It then creates a fresh temporary Go module/cache
+directory and executes an actual `go mod download github.com/google/uuid@v1.6.0`
+with end-to-end TLS and `GOSUMDB=sum.golang.org` enforced.
+
+For that child process only, `NO_PROXY` and public-module exceptions are
+cleared to *require use of the restricted proxy*, not direct internet egress.
+No credentials, root privileges, source changes or service restarts are needed.
+
+**Do not use `go mod download -json` as the sole canary:** Go can exit zero while
+reporting a dependency download error in its JSON. The verified non-JSON
+command must exit zero. No TLS or checksum verification is disabled.
+
+The canary is an additional operator proof, **not a replacement** for exact-head
+Woodpecker Go 1.26/1.27 CI, PostgreSQL/PostGIS tenant RLS or the independent
+logical-restore drill. A failed canary must block promotion rather than
+encourage clearing the HTTP proxy or bypassing the restricted network policy.
+
+Run its dependency-free regression tests with:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s woodpecker/egress -p 'test_*.py'
+```
