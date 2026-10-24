@@ -81,6 +81,43 @@ class DeploymentTests(unittest.TestCase):
                        probe=lambda: None)
             self.assertEqual(live.read_bytes(), OLD)
 
+    def test_post_restart_checks_both_private_bridge_listeners(self):
+        from unittest.mock import patch
+        from deploy_go_egress import probe_service
+        observed = []
+
+        def response(host, port=443, bridge_ip="172.18.0.1"):
+            observed.append((bridge_ip, host, port))
+            if host == "unlisted.example" or port != 443:
+                return b"HTTP/1.1 403 Forbidden"
+            return b"HTTP/1.1 200 Connection Established"
+
+        with patch("deploy_go_egress._connect_status", side_effect=response):
+            probe_service()
+
+        for bridge_ip in ("172.17.0.1", "172.18.0.1"):
+            with self.subTest(bridge_ip=bridge_ip):
+                self.assertIn((bridge_ip, "proxy.golang.org", 443), observed)
+                self.assertIn((bridge_ip, "sum.golang.org", 443), observed)
+                self.assertIn((bridge_ip, "github.com", 443), observed)
+                self.assertIn((bridge_ip, "unlisted.example", 443), observed)
+                self.assertIn((bridge_ip, "proxy.golang.org", 80), observed)
+
+    def test_post_restart_second_bridge_denial_failure_is_not_ignored(self):
+        from unittest.mock import patch
+        from deploy_go_egress import probe_service
+
+        def response(host, port=443, bridge_ip="172.18.0.1"):
+            if bridge_ip == "172.17.0.1" and host == "unlisted.example":
+                return b"HTTP/1.1 200 Connection Established"
+            if host == "unlisted.example" or port != 443:
+                return b"HTTP/1.1 403 Forbidden"
+            return b"HTTP/1.1 200 Connection Established"
+
+        with patch("deploy_go_egress._connect_status", side_effect=response):
+            with self.assertRaisesRegex(RuntimeError, "deny"):
+                probe_service()
+
 
 if __name__ == "__main__":
     unittest.main()
