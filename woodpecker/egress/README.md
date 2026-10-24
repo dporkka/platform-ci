@@ -52,24 +52,37 @@ python3 woodpecker/egress/check_deployment.py \
 ```
 
 If the preflight fails, investigate drift before changing the live service.
-Only deploy during an observed idle window. On the CI host:
+Only deploy during an operator-approved idle maintenance window, with
+Woodpecker jobs quiesced so no new CONNECT sessions can start. On the CI host,
+from a trusted checkout of the reviewed source:
 
 ```sh
-sudo ss -Htn state established '( sport = :3188 )'
-sudo cp -a /opt/woodpecker/egress-proxy/github_connect.py \
-  /opt/woodpecker/egress-proxy/github_connect.py.pre-update
-sudo install -o root -g root -m 0644 woodpecker/egress/github_connect.py \
-  /opt/woodpecker/egress-proxy/github_connect.py
-sudo python3 -m py_compile /opt/woodpecker/egress-proxy/github_connect.py
-sudo systemctl restart woodpecker-github-egress.service
-sudo systemctl is-active woodpecker-github-egress.service
-sudo ss -lnt | grep ':3188 '
+# Read-only preflight; runs without root and makes no service changes.
+python3 woodpecker/egress/deploy_go_egress.py \
+  --candidate woodpecker/egress/github_connect.py
+
+# Authorized operator only; do not run while CI workflows are active.
+sudo python3 woodpecker/egress/deploy_go_egress.py \
+  --candidate woodpecker/egress/github_connect.py --apply
 ```
 
-If the service fails, restore the saved file and restart it. Follow the change
-with a restricted CONNECT probe **from a rootless Podman container** and a live
-Woodpecker checkout. A successful unauthenticated connection to a private GitHub
-repository reaches an authentication error; it does not need to fetch source.
+The one-off helper pins the reviewed candidate Git blob; checks that only the
+two exact Go HTTPS destinations are added; checks for active CONNECT sessions
+twice; requires an existing root-owned, regular mode-0644 live file; refuses to
+overwrite an existing backup; stages an atomic source-file replacement; restarts
+**only** `woodpecker-github-egress.service`; and verifies positive CONNECT
+responses for `proxy.golang.org`/`sum.golang.org` and negative responses for
+unknown hosts and non-443 requests. It retains
+`github_connect.py.before-go-update` beside the live file. If restart or
+probes fail, it restores the original policy and restarts the same service.
+If automatic rollback also fails, treat this as a critical incident and use
+the saved backup under an authorized recovery procedure. This script neither
+grants privileges nor pauses CI pipelines for the operator.
+
+After success, independently verify a restricted CONNECT probe **from a
+rootless Podman workflow container** and a real Woodpecker Go-module download
+and checksum test. Then run the full Go 1.26/1.27 PostgreSQL/PostGIS matrix and
+hosted restore drill. Never infer green hosted checks from proxy health alone.
 
 October 23, 2026 live verification: the exact /32 patch passed the restricted
 proxy CONNECT probe and Websyt PR #299's dedicated `backup-recovery` workflow
