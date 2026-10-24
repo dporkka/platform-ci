@@ -63,13 +63,18 @@ python3 woodpecker/egress/deploy_go_egress.py \
 
 # Authorized operator only; do not run while CI workflows are active.
 sudo python3 woodpecker/egress/deploy_go_egress.py \
-  --candidate woodpecker/egress/github_connect.py --apply
+  --candidate woodpecker/egress/github_connect.py \
+  --apply --confirm-ci-quiesced
 ```
 
 The one-off helper pins the reviewed candidate Git blob; checks that only the
 two exact Go HTTPS destinations are added; checks for active CONNECT sessions
-twice; requires an existing root-owned, regular mode-0644 live file; refuses to
-overwrite an existing backup; stages an atomic source-file replacement; restarts
+over a ten-second quiet window; requires an explicit `--confirm-ci-quiesced`
+operator acknowledgement when applying, an existing root-owned regular
+mode-0644 live file, and refuses to overwrite an existing backup. The quiet
+window only samples established connections: it is **not** a substitute for
+stopping new CI job admission and coordinating a maintenance window. The helper
+stages an atomic source-file replacement; restarts
 **only** `woodpecker-github-egress.service`; and verifies positive CONNECT
 responses for `proxy.golang.org`/`sum.golang.org` and negative responses for
 unknown hosts and non-443 requests. It retains

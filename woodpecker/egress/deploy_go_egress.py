@@ -12,6 +12,7 @@ import socket
 import stat
 import subprocess
 import tempfile
+import time
 
 from check_deployment import verify_policy
 
@@ -70,15 +71,21 @@ def _backup(path: Path, content: bytes, mode: int) -> Path:
     return backup
 
 
-def deploy(candidate: bytes, live: Path, *, sessions, restart, probe) -> None:
+def deploy(candidate: bytes, live: Path, *, sessions, restart, probe,
+           sleep=time.sleep) -> None:
     verify_candidate(candidate)
     if live.is_symlink() or not live.is_file():
         raise ValueError("live target must be an existing regular non-symlink file")
     original = live.read_bytes()
     original_stat = live.stat()
     verify_policy(original.decode(), candidate.decode())
+    # A zero-connection instant does not establish a quiet maintenance window.
+    # Re-sample over ten seconds; CI admission must also be paused externally.
     ensure_idle(sessions)
-    ensure_idle(sessions)  # Recheck immediately before any host-file mutation.
+    sleep(5)
+    ensure_idle(sessions)
+    sleep(5)
+    ensure_idle(sessions)
     _backup(live, original, stat.S_IMODE(original_stat.st_mode))
     changed = False
     try:
@@ -125,11 +132,15 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--candidate", type=Path, required=True)
     p.add_argument("--apply", action="store_true", help="requires authorized root maintenance")
+    p.add_argument("--confirm-ci-quiesced", action="store_true",
+                   help="operator confirms new CI jobs have been paused")
     args = p.parse_args()
 
     data = args.candidate.read_bytes()
     verify_candidate(data)
     verify_policy(LIVE.read_text(), data.decode())
+    if args.apply and not args.confirm_ci_quiesced:
+        raise ValueError("--apply requires --confirm-ci-quiesced after stopping CI job admission")
     ensure_idle(current_sessions)
     if not args.apply:
         print("PASS: reviewed candidate, unchanged proxy logic, and zero live CONNECT sessions")

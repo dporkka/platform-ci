@@ -26,7 +26,7 @@ class DeploymentTests(unittest.TestCase):
             live = Path(td) / "github_connect.py"
             live.write_bytes(OLD)
             events = []
-            deploy(CANDIDATE, live, sessions=lambda: "", restart=lambda: events.append("restart"),
+            deploy(CANDIDATE, live, sleep=lambda _: None, sessions=lambda: "", restart=lambda: events.append("restart"),
                    probe=lambda: events.append("probe"))
             self.assertEqual(live.read_bytes(), CANDIDATE)
             self.assertEqual((Path(td) / "github_connect.py.before-go-update").read_bytes(), OLD)
@@ -41,7 +41,7 @@ class DeploymentTests(unittest.TestCase):
                 events.append("probe")
                 raise RuntimeError("failed post-restart probe")
             with self.assertRaisesRegex(RuntimeError, "failed post-restart probe"):
-                deploy(CANDIDATE, live, sessions=lambda: "", restart=lambda: events.append("restart"),
+                deploy(CANDIDATE, live, sleep=lambda _: None, sessions=lambda: "", restart=lambda: events.append("restart"),
                        probe=probe)
             self.assertEqual(live.read_bytes(), OLD)
             self.assertEqual(events, ["restart", "probe", "restart"])
@@ -52,7 +52,7 @@ class DeploymentTests(unittest.TestCase):
             live.write_bytes(OLD)
             reads = iter(("", "ESTAB 0 0 127.0.0.1:3188 172.18.0.2:10000"))
             with self.assertRaisesRegex(ValueError, "active CONNECT"):
-                deploy(CANDIDATE, live, sessions=lambda: next(reads), restart=lambda: None,
+                deploy(CANDIDATE, live, sleep=lambda _: None, sessions=lambda: next(reads), restart=lambda: None,
                        probe=lambda: None)
             self.assertEqual(live.read_bytes(), OLD)
 
@@ -66,7 +66,7 @@ class DeploymentTests(unittest.TestCase):
                 if len(calls) == 1:
                     raise RuntimeError("restart failure")
             with self.assertRaisesRegex(RuntimeError, "restart failure"):
-                deploy(CANDIDATE, live, sessions=lambda: "", restart=restart,
+                deploy(CANDIDATE, live, sleep=lambda _: None, sessions=lambda: "", restart=restart,
                        probe=lambda: self.fail("probe must not run after failed restart"))
             self.assertEqual(live.read_bytes(), OLD)
             self.assertEqual(calls, ["restart", "restart"])
@@ -77,7 +77,7 @@ class DeploymentTests(unittest.TestCase):
             live.write_bytes(OLD)
             (Path(td) / "github_connect.py.before-go-update").write_bytes(b"existing backup")
             with self.assertRaises(FileExistsError):
-                deploy(CANDIDATE, live, sessions=lambda: "", restart=lambda: None,
+                deploy(CANDIDATE, live, sleep=lambda _: None, sessions=lambda: "", restart=lambda: None,
                        probe=lambda: None)
             self.assertEqual(live.read_bytes(), OLD)
 
