@@ -97,3 +97,42 @@ proxy CONNECT probe and Websyt PR #299's dedicated `backup-recovery` workflow
 completed with a successful checkout, Restic integrity check, and encrypted
 restore smoke test. The corresponding production source was backed up at
 `/opt/woodpecker/egress-proxy/github_connect.py.bak-before-rootless-20261023`.
+
+
+## Post-deployment Go runner canary (read-only)
+
+After the authorized, quiesced rollout, run the committed
+`verify_runner_go_egress.py` **inside each actual Woodpecker Go validation
+container** (Go 1.26 and Go 1.27), using a trusted checkout of platform-ci.
+A host-only probe is insufficient evidence of runner access:
+
+```sh
+# Inside each Go image, after the approved proxy rollout:
+python3 woodpecker/egress/verify_runner_go_egress.py
+```
+
+The script accepts only `HTTPS_PROXY=http://172.17.0.1:3188` or
+`http://172.18.0.1:3188`; it checks CONNECT **200** for the two exact Go
+module and checksum origins plus GitHub, and CONNECT **403** for an unknown
+origin and non-443 traffic. It then creates a fresh temporary Go module/cache
+directory and executes an actual `go mod download github.com/google/uuid@v1.6.0`
+with end-to-end TLS and `GOSUMDB=sum.golang.org` enforced.
+
+For that child process only, `NO_PROXY` and public-module exceptions are
+cleared to *require use of the restricted proxy*, not direct internet egress.
+No credentials, root privileges, source changes or service restarts are needed.
+
+**Do not use `go mod download -json` as the sole canary:** Go can exit zero while
+reporting a dependency download error in its JSON. The verified non-JSON
+command must exit zero. No TLS or checksum verification is disabled.
+
+The canary is an additional operator proof, **not a replacement** for exact-head
+Woodpecker Go 1.26/1.27 CI, PostgreSQL/PostGIS tenant RLS or the independent
+logical-restore drill. A failed canary must block promotion rather than
+encourage clearing the HTTP proxy or bypassing the restricted network policy.
+
+Run its dependency-free regression tests with:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s woodpecker/egress -p 'test_*.py'
+```
