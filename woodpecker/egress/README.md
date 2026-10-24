@@ -78,7 +78,9 @@ rechecks that the live source has not been edited or replaced during the
 ten-second quiet window; stages an atomic source-file replacement; restarts
 **only** `woodpecker-github-egress.service`; and verifies positive CONNECT
 responses for `proxy.golang.org`/`sum.golang.org` and negative responses for
-unknown hosts and non-443 requests. It retains
+unknown hosts and non-443 requests **on both Docker-private listeners**
+(`172.17.0.1:3188` and `172.18.0.1:3188`). A failure on either listener
+triggers rollback. It retains
 `github_connect.py.before-go-update` beside the live file. If restart or
 probes fail, it restores the original policy and restarts the same service.
 If automatic rollback also fails, treat this as a critical incident and use
