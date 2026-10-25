@@ -24,7 +24,15 @@ exit 0
 SH
 chmod +x "$tmp/bin/"*
 chmod +x "$script_dir/queue-position.sh"
-test_path="$tmp/bin:/usr/bin:/bin"
+# Use an isolated tool PATH so a host-installed authenticated Woodpecker CLI
+# cannot invalidate the missing-CLI regression. Only explicitly whitelisted
+# read-only utility commands are available until the mock CLI is installed.
+for tool in bash dirname mktemp rm sed awk grep head tr cat wc sort; do
+  resolved="$(command -v "$tool")"
+  [[ "$resolved" == /* ]] || continue
+  ln -s "$resolved" "$tmp/bin/$tool"
+done
+test_path="$tmp/bin"
 
 diagnose() {
   PATH="$test_path" bash "$script_dir/diagnose-control-plane.sh" \
