@@ -169,7 +169,11 @@ if command -v woodpecker-cli >/dev/null 2>&1; then
     ok "authenticated CLI request succeeded"
     sed -n '1,10p' "$info_file"
   else
-    warn "woodpecker-cli could not authenticate or reach the server"
+    if [[ -n "$pipeline" ]]; then
+      fail "Woodpecker CLI authentication unavailable for pipeline $pipeline"
+    else
+      warn "woodpecker-cli could not authenticate or reach the server"
+    fi
     sed -n '1,20p' "$info_file" >&2 || true
   fi
   rm -f "$info_file"
@@ -228,7 +232,11 @@ if command -v woodpecker-cli >/dev/null 2>&1; then
       warn "queue classifier is missing or not executable: $script_dir/queue-position.sh"
     fi
   else
-    warn "could not inspect Woodpecker pipeline queue"
+    if [[ -n "$pipeline" ]]; then
+      fail "could not inspect Woodpecker queue for pipeline $pipeline"
+    else
+      warn "could not inspect Woodpecker pipeline queue"
+    fi
     printf '%s\n' "$queue" >&2
   fi
 
@@ -265,7 +273,11 @@ if command -v woodpecker-cli >/dev/null 2>&1; then
     fi
   fi
 else
-  warn "woodpecker-cli is unavailable; install it or run this script on the CI host"
+  if [[ -n "$pipeline" ]]; then
+    fail "Woodpecker CLI unavailable; cannot inspect pipeline $pipeline without authenticated access"
+  else
+    warn "woodpecker-cli is unavailable; install it or run this script on the CI host"
+  fi
 fi
 
 section "local containers"

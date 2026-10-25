@@ -36,8 +36,13 @@ bash woodpecker/scripts/diagnose-control-plane.sh \
 ```
 
 This calls the Woodpecker 3.x CLI's `pipeline show` and `pipeline ps` commands,
-so the diagnostic reports the pipeline state and every step's state. Add
-`--logs` to request the pipeline logs as well:
+so the diagnostic reports the pipeline state and every step's state. With
+`--pipeline`, the diagnostic **fails nonzero** if an authenticated CLI is
+unavailable or queue inspection fails; a healthy public `/healthz` alone must
+never be mistaken for successful inspection of the requested pipeline.
+Without `--pipeline`, a successful result can mean only that the accessible
+public and local checks passed; it is **not** a CI or merge attestation.
+Add `--logs` to request the pipeline logs as well:
 
 ```bash
 bash woodpecker/scripts/diagnose-control-plane.sh \
