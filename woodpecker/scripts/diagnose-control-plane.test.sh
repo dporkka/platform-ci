@@ -84,4 +84,44 @@ if ! grep -q 'FAIL:.*queue.*pipeline 511' "$tmp/queue-denied.out"; then
   cat "$tmp/queue-denied.out" >&2
   exit 1
 fi
+# A healthy /healthz is not enough to notice a failing local OAuth refresh
+# timer. Exercise only whitelisted, non-sensitive systemd unit state.
+cat >"$tmp/bin/systemctl" <<'SH'
+#!/bin/sh
+case "$*" in
+  *woodpecker-github-oauth-refresh.service*) ;;
+  *) echo "unexpected systemctl request" >&2; exit 9 ;;
+esac
+case "${MOCK_OAUTH_CASE:-failed}" in
+  failed)
+    printf 'LoadState=loaded\nActiveState=failed\nResult=exit-code\nExecMainStatus=1\n'
+    ;;
+  healthy)
+    printf 'LoadState=loaded\nActiveState=inactive\nResult=success\nExecMainStatus=0\n'
+    ;;
+  missing)
+    printf 'LoadState=not-found\nActiveState=inactive\nResult=success\nExecMainStatus=0\n'
+    ;;
+esac
+SH
+chmod +x "$tmp/bin/systemctl"
+MOCK_OAUTH_CASE=failed diagnose >"$tmp/oauth-failed.out" 2>&1
+if ! grep -q 'WARN:.*OAuth refresh.*failed' "$tmp/oauth-failed.out"; then
+  echo "FAIL: failed local OAuth refresher not reported despite healthy HTTP" >&2
+  cat "$tmp/oauth-failed.out" >&2
+  exit 1
+fi
+MOCK_OAUTH_CASE=healthy diagnose >"$tmp/oauth-healthy.out" 2>&1
+if grep -q 'WARN:.*OAuth refresh' "$tmp/oauth-healthy.out"; then
+  echo "FAIL: healthy inactive oneshot falsely flagged" >&2
+  cat "$tmp/oauth-healthy.out" >&2
+  exit 1
+fi
+MOCK_OAUTH_CASE=missing diagnose >"$tmp/oauth-missing.out" 2>&1
+if grep -q 'WARN:.*OAuth refresh' "$tmp/oauth-missing.out"; then
+  echo "FAIL: missing optional local OAuth unit falsely flagged" >&2
+  cat "$tmp/oauth-missing.out" >&2
+  exit 1
+fi
+echo "PASS: OAuth refresh status is read-only and distinguishes failure from healthy/absent"
 echo "PASS: exact pipeline diagnosis fails closed; generic health remains usable"
