@@ -161,6 +161,41 @@ The recovery helper never changes repository configuration, Woodpecker repositor
 
 ## Interpreting failures
 
+### Woodpecker is healthy but GitHub OAuth refresh is failing
+
+The public `/healthz` endpoint only establishes HTTP service availability. It
+does not establish that forge OAuth credentials refresh successfully or that a
+runner can start a job.
+
+The read-only `diagnose-control-plane.sh` reports the state of the optional
+local `woodpecker-github-oauth-refresh.service` unit when systemd is available.
+The unit is a **oneshot** service, so `inactive` with `Result=success` and
+`ExecMainStatus=0` can be normal; `ActiveState=failed`, a failed `Result`,
+or nonzero `ExecMainStatus` warrants investigation. The diagnostic never
+reads tokens, environment values, service arguments, or journal contents.
+
+On the authorized host, an administrator can review *only status metadata*:
+
+```bash
+systemctl show woodpecker-github-oauth-refresh.service \
+  --property=LoadState,ActiveState,Result,ExecMainStatus,ExecMainExitTimestamp \
+  --no-pager
+systemctl show woodpecker-github-oauth-refresh.timer \
+  --property=LoadState,ActiveState,SubState,LastTriggerUSec \
+  --no-pager
+```
+
+If the service failed, a privileged operator must inspect the underlying
+exception and timer configuration **locally**, redacting credentials before
+sharing any journal excerpt. Do not print or commit OAuth tokens, restart the
+unit, re-run its root-owned helper, or rotate credentials merely because this
+check warns. Correlate the error timestamp with authenticated Woodpecker
+pipeline/step logs and the current queue and agent eligibility first.
+
+A failing refresh unit is an operational lead, **not proof** that
+`runner-smoke`, `quality`, or `backend-tests` failed for that reason.
+GitHub-hosted Actions uses a separate control plane.
+
 ### `/healthz` returns Cloudflare Error 1033
 
 Error 1033 means Cloudflare has the hostname/tunnel mapping but cannot reach a healthy tunnel connector. Treat this as tunnel/host infrastructure failure, not as a repository test failure.
