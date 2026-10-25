@@ -49,7 +49,8 @@ class RunnerCanaryTests(unittest.TestCase):
             return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
         env = {"HTTPS_PROXY": "http://172.18.0.1:3188",
                "NO_PROXY": "proxy.golang.org,sum.golang.org",
-               "GONOSUMDB": "*", "GOPRIVATE": "*"}
+               "GONOSUMDB": "*", "GOPRIVATE": "*",
+               "GOINSECURE": "*", "GOENV": "/tmp/unsafe-goenv"}
         with patch.object(canary.subprocess, "run", side_effect=run):
             canary.check_go_download(env)
         self.assertEqual(len(calls), 1)
@@ -60,6 +61,8 @@ class RunnerCanaryTests(unittest.TestCase):
         self.assertEqual(child["GOPROXY"], "https://proxy.golang.org")
         self.assertEqual(child["GOPRIVATE"], "")
         self.assertEqual(child["GONOSUMDB"], "")
+        self.assertEqual(child["GOINSECURE"], "")
+        self.assertEqual(child["GOENV"], "off")
         self.assertEqual(child["NO_PROXY"], "")
         self.assertEqual(child["HTTPS_PROXY"], env["HTTPS_PROXY"])
         self.assertTrue(child["GOMODCACHE"].startswith(cwd))

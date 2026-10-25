@@ -80,6 +80,7 @@ def check_go_download(environment: dict[str, str]) -> None:
             "GOPROXY": "https://proxy.golang.org",
             "GOSUMDB": "sum.golang.org",
             "GONOSUMDB": "", "GONOPROXY": "", "GOPRIVATE": "",
+            "GOINSECURE": "", "GOENV": "off",
             "GOTOOLCHAIN": "local", "GOFLAGS": "", "GOWORK": "off",
             "GOPATH": str(root / "gopath"),
             "GOMODCACHE": str(root / "gopath" / "pkg" / "mod"),
