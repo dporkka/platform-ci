@@ -114,6 +114,33 @@ else
   warn "curl is unavailable; skipping HTTP health check"
 fi
 
+# A healthy HTTP endpoint does not prove that forge credentials keep refreshing.
+# Query only selected systemd status properties; never read unit environment,
+# tokens, process arguments, or logs in this routine.
+section "forge OAuth refresh"
+if command -v systemctl >/dev/null 2>&1; then
+  refresh_unit="woodpecker-github-oauth-refresh.service"
+  if refresh_state="$(systemctl show "$refresh_unit" \
+      --property=LoadState,ActiveState,Result,ExecMainStatus --no-pager 2>/dev/null)"; then
+    refresh_loaded="$(awk -F= '$1 == "LoadState" { print $2; exit }' <<<"$refresh_state")"
+    refresh_active="$(awk -F= '$1 == "ActiveState" { print $2; exit }' <<<"$refresh_state")"
+    refresh_result="$(awk -F= '$1 == "Result" { print $2; exit }' <<<"$refresh_state")"
+    refresh_exit="$(awk -F= '$1 == "ExecMainStatus" { print $2; exit }' <<<"$refresh_state")"
+
+    if [[ "$refresh_loaded" != "loaded" ]]; then
+      ok "OAuth refresh service is not installed on this host; local status is not applicable"
+    elif [[ "$refresh_active" == "failed" || "$refresh_result" != "success" || "$refresh_exit" != "0" ]]; then
+      warn "Woodpecker OAuth refresh service failed or is unhealthy (active=${refresh_active:-unknown}, result=${refresh_result:-unknown}, exit=${refresh_exit:-unknown}); inspect the administrator-only journal; causal link to CI is unverified"
+    else
+      ok "Woodpecker OAuth refresh service status is healthy (active=${refresh_active:-unknown}, result=success)"
+    fi
+  else
+    warn "cannot inspect the local Woodpecker OAuth refresh unit without systemd access"
+  fi
+else
+  warn "systemctl unavailable; cannot inspect local Woodpecker OAuth refresh health"
+fi
+
 if ((cloudflare_1033)); then
   section "cloudflare tunnel"
   echo "Cloudflare Error 1033 means the edge cannot reach an active connector for this tunnel."
@@ -169,7 +196,11 @@ if command -v woodpecker-cli >/dev/null 2>&1; then
     ok "authenticated CLI request succeeded"
     sed -n '1,10p' "$info_file"
   else
-    warn "woodpecker-cli could not authenticate or reach the server"
+    if [[ -n "$pipeline" ]]; then
+      fail "Woodpecker CLI authentication unavailable for pipeline $pipeline"
+    else
+      warn "woodpecker-cli could not authenticate or reach the server"
+    fi
     sed -n '1,20p' "$info_file" >&2 || true
   fi
   rm -f "$info_file"
@@ -228,7 +259,11 @@ if command -v woodpecker-cli >/dev/null 2>&1; then
       warn "queue classifier is missing or not executable: $script_dir/queue-position.sh"
     fi
   else
-    warn "could not inspect Woodpecker pipeline queue"
+    if [[ -n "$pipeline" ]]; then
+      fail "could not inspect Woodpecker queue for pipeline $pipeline"
+    else
+      warn "could not inspect Woodpecker pipeline queue"
+    fi
     printf '%s\n' "$queue" >&2
   fi
 
@@ -265,7 +300,11 @@ if command -v woodpecker-cli >/dev/null 2>&1; then
     fi
   fi
 else
-  warn "woodpecker-cli is unavailable; install it or run this script on the CI host"
+  if [[ -n "$pipeline" ]]; then
+    fail "Woodpecker CLI unavailable; cannot inspect pipeline $pipeline without authenticated access"
+  else
+    warn "woodpecker-cli is unavailable; install it or run this script on the CI host"
+  fi
 fi
 
 section "local containers"

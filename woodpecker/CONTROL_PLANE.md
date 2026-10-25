@@ -36,8 +36,13 @@ bash woodpecker/scripts/diagnose-control-plane.sh \
 ```
 
 This calls the Woodpecker 3.x CLI's `pipeline show` and `pipeline ps` commands,
-so the diagnostic reports the pipeline state and every step's state. Add
-`--logs` to request the pipeline logs as well:
+so the diagnostic reports the pipeline state and every step's state. With
+`--pipeline`, the diagnostic **fails nonzero** if an authenticated CLI is
+unavailable or queue inspection fails; a healthy public `/healthz` alone must
+never be mistaken for successful inspection of the requested pipeline.
+Without `--pipeline`, a successful result can mean only that the accessible
+public and local checks passed; it is **not** a CI or merge attestation.
+Add `--logs` to request the pipeline logs as well:
 
 ```bash
 bash woodpecker/scripts/diagnose-control-plane.sh \
@@ -51,6 +56,36 @@ For a failed O-Chem pipeline, classify the first executed failure before editing
 application code: if `runner-smoke` never starts, investigate the agent/runtime;
 if it succeeds and `quality` fails, investigate the Node/frontend gate; if it
 succeeds and `backend-tests` fails, investigate Python/backend tests.
+
+## Identify the earliest failed step without rerunning CI
+
+For an already failed pipeline, the **read-only** failure helper identifies the
+first failed step that actually started, ordered by start timestamp, and avoids
+downloading logs unless expressly requested:
+
+```bash
+bash woodpecker/scripts/first-failed-step.sh \
+  --server https://ci.adacavo.com \
+  --repo dporkka/websyt.dev \
+  --pipeline 499
+```
+
+To retrieve one best-effort-redacted error-line candidate from that step only:
+
+```bash
+bash woodpecker/scripts/first-failed-step.sh \
+  --server https://ci.adacavo.com \
+  --repo dporkka/websyt.dev \
+  --pipeline 499 --show-log-excerpt
+```
+
+Run it on the trusted host with an authenticated Woodpecker 3.x CLI context.
+The helper never starts, restarts, or replays a pipeline. An error candidate is
+**not** confirmation of the root cause; inspect the selected step's complete
+logs locally. Redaction is best effort, so manually review output before
+sharing it outside the trusted host. If the CLI cannot access the pipeline,
+repair access first rather than assuming a particular application failure.
+Offline parser tests: `bash woodpecker/scripts/first-failed-step.test.sh`.
 
 ## Guarded recovery helper
 
@@ -125,6 +160,41 @@ Use `--restart-server` only with stronger evidence that the Woodpecker server pr
 The recovery helper never changes repository configuration, Woodpecker repository settings, tunnel configuration, or secrets.
 
 ## Interpreting failures
+
+### Woodpecker is healthy but GitHub OAuth refresh is failing
+
+The public `/healthz` endpoint only establishes HTTP service availability. It
+does not establish that forge OAuth credentials refresh successfully or that a
+runner can start a job.
+
+The read-only `diagnose-control-plane.sh` reports the state of the optional
+local `woodpecker-github-oauth-refresh.service` unit when systemd is available.
+The unit is a **oneshot** service, so `inactive` with `Result=success` and
+`ExecMainStatus=0` can be normal; `ActiveState=failed`, a failed `Result`,
+or nonzero `ExecMainStatus` warrants investigation. The diagnostic never
+reads tokens, environment values, service arguments, or journal contents.
+
+On the authorized host, an administrator can review *only status metadata*:
+
+```bash
+systemctl show woodpecker-github-oauth-refresh.service \
+  --property=LoadState,ActiveState,Result,ExecMainStatus,ExecMainExitTimestamp \
+  --no-pager
+systemctl show woodpecker-github-oauth-refresh.timer \
+  --property=LoadState,ActiveState,SubState,LastTriggerUSec \
+  --no-pager
+```
+
+If the service failed, a privileged operator must inspect the underlying
+exception and timer configuration **locally**, redacting credentials before
+sharing any journal excerpt. Do not print or commit OAuth tokens, restart the
+unit, re-run its root-owned helper, or rotate credentials merely because this
+check warns. Correlate the error timestamp with authenticated Woodpecker
+pipeline/step logs and the current queue and agent eligibility first.
+
+A failing refresh unit is an operational lead, **not proof** that
+`runner-smoke`, `quality`, or `backend-tests` failed for that reason.
+GitHub-hosted Actions uses a separate control plane.
 
 ### `/healthz` returns Cloudflare Error 1033
 
