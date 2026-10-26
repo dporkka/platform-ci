@@ -7,6 +7,7 @@ CI maintenance window. Does not change Woodpecker or GitHub merge gates.
 import argparse
 import hashlib
 import os
+import shutil
 from pathlib import Path
 import socket
 import stat
@@ -42,6 +43,27 @@ def current_sessions() -> str:
                           timeout=8).stdout
 
 
+
+MIN_FREE_GIB = 20
+MAX_USED_PERCENT = 95
+
+
+def ensure_storage_headroom(live: Path, *, disk_usage=None) -> None:
+    """Read-only fail-closed check on the filesystem containing the live policy.
+
+    This prevents a policy backup/restart under host storage pressure; it does
+    not reserve capacity and must be repeated after the quiet-window samples.
+    """
+    usage = (disk_usage or shutil.disk_usage)(live.parent)
+    total, used, free = usage.total, usage.used, usage.free
+    if (not all(type(v) is int for v in (total, used, free))
+            or total <= 0 or used < 0 or free < 0
+            or used > total or free > total or used + free > total):
+        raise ValueError("invalid disk headroom evidence; refuse proxy rollout")
+    if free < MIN_FREE_GIB * (1024 ** 3) or 100 * used >= MAX_USED_PERCENT * total:
+        raise ValueError("insufficient disk headroom; refuse proxy rollout")
+
+
 def _atomic_replace(path: Path, data: bytes, original_stat) -> None:
     fd, name = tempfile.mkstemp(prefix=".github-connect-rollout-", dir=path.parent)
     try:
@@ -72,7 +94,7 @@ def _backup(path: Path, content: bytes, mode: int) -> Path:
 
 
 def deploy(candidate: bytes, live: Path, *, sessions, restart, probe,
-           sleep=time.sleep) -> None:
+           sleep=time.sleep, capacity_check=None) -> None:
     verify_candidate(candidate)
     if live.is_symlink() or not live.is_file():
         raise ValueError("live target must be an existing regular non-symlink file")
@@ -102,6 +124,9 @@ def deploy(candidate: bytes, live: Path, *, sessions, restart, probe,
         unchanged = False
     if not unchanged:
         raise ValueError("live proxy changed during quiet window; restart preflight")
+    # Recheck just before the first persistent write; capacity may change
+    # while the three idle samples are collected.
+    (capacity_check or ensure_storage_headroom)(live)
     _backup(live, original, stat.S_IMODE(original_stat.st_mode))
     changed = False
     try:
@@ -164,6 +189,7 @@ def main() -> int:
     if args.apply and not args.confirm_ci_quiesced:
         raise ValueError("--apply requires --confirm-ci-quiesced after stopping CI job admission")
     ensure_idle(current_sessions)
+    ensure_storage_headroom(LIVE)
     if not args.apply:
         print("PASS: reviewed candidate, unchanged proxy logic, and zero live CONNECT sessions")
         print("Read-only preflight; nothing deployed. --apply requires authorized operator.")
