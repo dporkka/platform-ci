@@ -81,16 +81,30 @@ def _atomic_replace(path: Path, data: bytes, original_stat) -> None:
 
 
 def _backup(path: Path, content: bytes, mode: int) -> Path:
+    # Publishing the final backup name before fsync could leave a partial
+    # recovery file after ENOSPC/power loss and block subsequent safe retries.
+    # Write a private same-filesystem temp file, sync its contents, and only
+    # then atomically publish with link() (never replacing an existing backup).
     backup = path.with_name(path.name + ".before-go-update")
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    fd = os.open(backup, flags, mode)
-    with os.fdopen(fd, "wb") as file:
-        file.write(content)
-        file.flush()
-        os.fsync(file.fileno())
-    return backup
+    fd, staged = tempfile.mkstemp(prefix=".github-connect-backup-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as file:
+            os.fchmod(file.fileno(), mode)
+            file.write(content)
+            file.flush()
+            os.fsync(file.fileno())
+        # Atomic create-if-absent: FileExistsError preserves operator backups,
+        # including symlinks. Staged and backup are on the same filesystem.
+        os.link(staged, backup, follow_symlinks=False)
+        # Make the directory entry durable before touching the live policy.
+        directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        return backup
+    finally:
+        os.unlink(staged)
 
 
 def deploy(candidate: bytes, live: Path, *, sessions, restart, probe,
