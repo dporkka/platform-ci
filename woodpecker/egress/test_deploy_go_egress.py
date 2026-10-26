@@ -26,7 +26,7 @@ class DeploymentTests(unittest.TestCase):
             live = Path(td) / "github_connect.py"
             live.write_bytes(OLD)
             events = []
-            deploy(CANDIDATE, live, sleep=lambda _: None, sessions=lambda: "", restart=lambda: events.append("restart"),
+            deploy(CANDIDATE, live, capacity_check=lambda _: None, sleep=lambda _: None, sessions=lambda: "", restart=lambda: events.append("restart"),
                    probe=lambda: events.append("probe"))
             self.assertEqual(live.read_bytes(), CANDIDATE)
             self.assertEqual((Path(td) / "github_connect.py.before-go-update").read_bytes(), OLD)
@@ -41,7 +41,7 @@ class DeploymentTests(unittest.TestCase):
                 events.append("probe")
                 raise RuntimeError("failed post-restart probe")
             with self.assertRaisesRegex(RuntimeError, "failed post-restart probe"):
-                deploy(CANDIDATE, live, sleep=lambda _: None, sessions=lambda: "", restart=lambda: events.append("restart"),
+                deploy(CANDIDATE, live, capacity_check=lambda _: None, sleep=lambda _: None, sessions=lambda: "", restart=lambda: events.append("restart"),
                        probe=probe)
             self.assertEqual(live.read_bytes(), OLD)
             self.assertEqual(events, ["restart", "probe", "restart"])
@@ -52,7 +52,7 @@ class DeploymentTests(unittest.TestCase):
             live.write_bytes(OLD)
             reads = iter(("", "ESTAB 0 0 127.0.0.1:3188 172.18.0.2:10000"))
             with self.assertRaisesRegex(ValueError, "active CONNECT"):
-                deploy(CANDIDATE, live, sleep=lambda _: None, sessions=lambda: next(reads), restart=lambda: None,
+                deploy(CANDIDATE, live, capacity_check=lambda _: None, sleep=lambda _: None, sessions=lambda: next(reads), restart=lambda: None,
                        probe=lambda: None)
             self.assertEqual(live.read_bytes(), OLD)
 
@@ -66,7 +66,7 @@ class DeploymentTests(unittest.TestCase):
                 if len(calls) == 1:
                     raise RuntimeError("restart failure")
             with self.assertRaisesRegex(RuntimeError, "restart failure"):
-                deploy(CANDIDATE, live, sleep=lambda _: None, sessions=lambda: "", restart=restart,
+                deploy(CANDIDATE, live, capacity_check=lambda _: None, sleep=lambda _: None, sessions=lambda: "", restart=restart,
                        probe=lambda: self.fail("probe must not run after failed restart"))
             self.assertEqual(live.read_bytes(), OLD)
             self.assertEqual(calls, ["restart", "restart"])
@@ -77,7 +77,7 @@ class DeploymentTests(unittest.TestCase):
             live.write_bytes(OLD)
             (Path(td) / "github_connect.py.before-go-update").write_bytes(b"existing backup")
             with self.assertRaises(FileExistsError):
-                deploy(CANDIDATE, live, sleep=lambda _: None, sessions=lambda: "", restart=lambda: None,
+                deploy(CANDIDATE, live, capacity_check=lambda _: None, sleep=lambda _: None, sessions=lambda: "", restart=lambda: None,
                        probe=lambda: None)
             self.assertEqual(live.read_bytes(), OLD)
 
@@ -117,6 +117,60 @@ class DeploymentTests(unittest.TestCase):
         with patch("deploy_go_egress._connect_status", side_effect=response):
             with self.assertRaisesRegex(RuntimeError, "deny"):
                 probe_service()
+
+
+    def test_storage_preflight_rejects_low_space_and_high_utilization(self):
+        from collections import namedtuple
+        from deploy_go_egress import ensure_storage_headroom
+        Usage = namedtuple("Usage", "total used free")
+        g = 1024 ** 3
+        ensure_storage_headroom(Path("/tmp/unused"), disk_usage=lambda _: Usage(100*g, 70*g, 30*g))
+        with self.assertRaisesRegex(ValueError, "disk headroom"):
+            ensure_storage_headroom(Path("/tmp/unused"), disk_usage=lambda _: Usage(100*g, 70*g, 19*g))
+        with self.assertRaisesRegex(ValueError, "disk headroom"):
+            ensure_storage_headroom(Path("/tmp/unused"), disk_usage=lambda _: Usage(500*g, 475*g, 25*g))
+
+    def test_storage_preflight_rejects_malformed_capacity_evidence(self):
+        from collections import namedtuple
+        from deploy_go_egress import ensure_storage_headroom
+        Usage = namedtuple("Usage", "total used free")
+        for values in [(0, 0, 0), (100, 101, 0), (100, 0, 101), (-1, 0, 0), (100, -1, 0)]:
+            with self.subTest(values=values):
+                with self.assertRaisesRegex(ValueError, "disk"):
+                    ensure_storage_headroom(Path("/tmp/unused"), disk_usage=lambda _, v=values: Usage(*v))
+
+    def test_read_only_operator_preflight_rejects_low_capacity(self):
+        from collections import namedtuple
+        from unittest.mock import patch
+        from deploy_go_egress import main
+        Usage = namedtuple("Usage", "total used free")
+        g = 1024 ** 3
+        with tempfile.TemporaryDirectory() as td:
+            live = Path(td) / "github_connect.py"
+            live.write_bytes(OLD)
+            with patch("deploy_go_egress.LIVE", live), \
+                 patch("deploy_go_egress.current_sessions", return_value=""), \
+                 patch("deploy_go_egress.shutil.disk_usage",
+                       return_value=Usage(500*g, 480*g, 20*g)), \
+                 patch("sys.argv", ["deploy_go_egress.py", "--candidate", str(ROOT / "github_connect.py")]):
+                with self.assertRaisesRegex(ValueError, "insufficient disk headroom"):
+                    main()
+            self.assertEqual(live.read_bytes(), OLD)
+            self.assertFalse(live.with_name(live.name + ".before-go-update").exists())
+
+    def test_low_disk_during_rollout_does_not_create_backup_or_restart(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            live = Path(td) / "github_connect.py"
+            live.write_bytes(OLD)
+            events = []
+            with patch("deploy_go_egress.ensure_storage_headroom", side_effect=ValueError("insufficient disk headroom")):
+                with self.assertRaisesRegex(ValueError, "disk headroom"):
+                    deploy(CANDIDATE, live, sessions=lambda: "", sleep=lambda _: None,
+                           restart=lambda: events.append("restart"), probe=lambda: events.append("probe"))
+            self.assertEqual(live.read_bytes(), OLD)
+            self.assertFalse((Path(td) / "github_connect.py.before-go-update").exists())
+            self.assertEqual(events, [])
 
 
 if __name__ == "__main__":
