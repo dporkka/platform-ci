@@ -40,7 +40,9 @@ max_used_percent=$((10#$max_used_percent))
 if ! listing="$(df -B1 --output=size,used,avail,pcent / 2>/dev/null)"; then
   error df_unavailable
 fi
-read -r total used available percent extra <<<"$(tail -n 1 <<< "$listing")"
+mapfile -t df_lines <<< "$listing"
+((${#df_lines[@]} == 2)) || error unexpected_df_rows
+read -r total used available percent extra <<< "${df_lines[1]}"
 [[ "$percent" =~ ^[0-9]+%$ ]] || error malformed_df
 percent="${percent%%%}"
 for value in "$total" "$used" "$available" "$percent"; do
