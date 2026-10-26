@@ -90,7 +90,14 @@ responses for `proxy.golang.org`/`sum.golang.org` and negative responses for
 unknown hosts and non-443 requests **on both Docker-private listeners**
 (`172.17.0.1:3188` and `172.18.0.1:3188`). A failure on either listener
 triggers rollback. It retains
-`github_connect.py.before-go-update` beside the live file. If restart or
+`github_connect.py.before-go-update` beside the live file. The helper now
+writes the rollback backup into a private same-filesystem staging file, fsyncs
+the complete contents, then atomically publishes the backup via an exclusive
+hard link (never replacing an existing file or symlink). It fsyncs the parent
+directory before changing the live policy. A failed staging write or file
+sync removes the staging file and leaves no partial named backup. A directory
+sync failure aborts without changing the live proxy; a complete named backup
+may remain and requires operator inspection before retrying. If restart or
 probes fail, it restores the original policy and restarts the same service.
 If automatic rollback also fails, treat this as a critical incident and use
 the saved backup under an authorized recovery procedure. This script neither
