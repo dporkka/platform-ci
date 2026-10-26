@@ -80,6 +80,15 @@ def _atomic_replace(path: Path, data: bytes, original_stat) -> None:
             os.unlink(name)
 
 
+def _sync_directory(directory: Path) -> None:
+    """Durably publish each atomic policy rename before service restart."""
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def _backup(path: Path, content: bytes, mode: int) -> Path:
     # Publishing the final backup name before fsync could leave a partial
     # recovery file after ENOSPC/power loss and block subsequent safe retries.
@@ -146,6 +155,7 @@ def deploy(candidate: bytes, live: Path, *, sessions, restart, probe,
     try:
         _atomic_replace(live, candidate, original_stat)
         changed = True
+        _sync_directory(live.parent)
         restart()
         probe()
     except Exception as exc:
@@ -153,6 +163,7 @@ def deploy(candidate: bytes, live: Path, *, sessions, restart, probe,
             raise
         try:
             _atomic_replace(live, original, original_stat)
+            _sync_directory(live.parent)
             restart()
         except Exception as rollback_error:
             raise RuntimeError(
