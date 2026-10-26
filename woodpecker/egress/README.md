@@ -77,6 +77,16 @@ and adequate sustained disk headroom remain mandatory. A failed capacity check
 must never be overridden by clearing active compiler caches or pruning
 running Docker/Dagger resources.
 
+The helper additionally refuses to report read-only readiness while **local
+`woodpecker-agent` processes** remain present; for an authorized deployment,
+operators must stop local agent admission, verify no active builds remain, and
+ensure no other agents can begin jobs on this host. It repeats the agent-process
+check immediately before publishing the backup. Agent detection uses read-only
+`ps` and fails closed if process inspection fails. An empty local process list
+does **not** prove cluster-wide scheduling is paused; operator confirmation is
+still required. Stop admission using the operator's existing Woodpecker
+controls, not by modifying this helper or its safeguards.
+
 The helper also checks for active CONNECT sessions
 over a ten-second quiet window; requires an explicit `--confirm-ci-quiesced`
 operator acknowledgement when applying, an existing root-owned regular
