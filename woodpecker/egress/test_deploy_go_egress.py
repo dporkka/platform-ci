@@ -322,5 +322,58 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(events, ["restart"], "only rollback may restart after failed sync")
 
 
+    def test_active_woodpecker_agent_processes_refuse_operator_rollout(self):
+        from deploy_go_egress import ensure_agents_stopped
+        active = ("/bin/woodpecker-agent --config /etc/woodpecker/agent.conf\n"
+                  "python3 /usr/bin/worker-test.py\n")
+        with self.assertRaisesRegex(ValueError, "Woodpecker agents still running"):
+            ensure_agents_stopped(lambda: active)
+        ensure_agents_stopped(lambda: "bash -lc echo woodpecker-agent\npython3 -m unittest\n")
+        ensure_agents_stopped(lambda: "")
+
+    def test_agent_reappears_before_backup_refuses_mutation(self):
+        from deploy_go_egress import ensure_agents_stopped
+        with tempfile.TemporaryDirectory() as td:
+            live = Path(td) / "github_connect.py"
+            live.write_bytes(OLD)
+            events = []
+            with self.assertRaisesRegex(ValueError, "Woodpecker agents still running"):
+                deploy(CANDIDATE, live, sleep=lambda _: None, sessions=lambda: "",
+                       capacity_check=lambda _: ensure_agents_stopped(
+                           lambda: "/bin/woodpecker-agent\n"),
+                       restart=lambda: events.append("restart"),
+                       probe=lambda: events.append("probe"))
+            self.assertEqual(live.read_bytes(), OLD)
+            self.assertEqual(events, [])
+            self.assertFalse(live.with_name(live.name + ".before-go-update").exists())
+
+
+    def test_read_only_preflight_refuses_live_agent_processes(self):
+        from unittest.mock import patch
+        from deploy_go_egress import main
+        with tempfile.TemporaryDirectory() as td:
+            live = Path(td) / "github_connect.py"
+            live.write_bytes(OLD)
+            with patch("deploy_go_egress.LIVE", live), \
+                 patch("deploy_go_egress.current_sessions", return_value=""), \
+                 patch("deploy_go_egress.current_agent_processes",
+                       return_value="/bin/woodpecker-agent\n"), \
+                 patch("deploy_go_egress.ensure_storage_headroom"), \
+                 patch("sys.argv", ["deploy_go_egress.py", "--candidate", str(ROOT / "github_connect.py")]):
+                with self.assertRaisesRegex(ValueError, "Woodpecker agents still running"):
+                    main()
+            self.assertEqual(live.read_bytes(), OLD)
+            self.assertFalse(live.with_name(live.name + ".before-go-update").exists())
+
+    def test_worker_process_inspection_errors_fail_closed(self):
+        import subprocess
+        from unittest.mock import patch
+        from deploy_go_egress import current_agent_processes, ensure_agents_stopped
+        with patch("deploy_go_egress.subprocess.run",
+                   side_effect=subprocess.CalledProcessError(1, ["ps"])):
+            with self.assertRaises(subprocess.CalledProcessError):
+                ensure_agents_stopped(current_agent_processes)
+
+
 if __name__ == "__main__":
     unittest.main()
