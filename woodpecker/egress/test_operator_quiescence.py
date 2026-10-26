@@ -40,6 +40,7 @@ class QuiescenceTests(unittest.TestCase):
                 restart=lambda: None,
                 probe=lambda: None,
                 sleep=pauses.append,
+                capacity_check=lambda _: None,
             )
             self.assertGreaterEqual(len(pauses), 2)
             self.assertTrue(all(seconds >= 5 for seconds in pauses))
