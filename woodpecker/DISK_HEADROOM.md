@@ -14,6 +14,9 @@ The first command checks the filesystem containing `/`, reports the measured
 capacity and threshold in a stable single-line `status=ok` or `status=blocked`
 record, and exits 0 or 1 respectively. Bad arguments, malformed `df` output,
 or an unavailable disk inspection result are `status=error` (exit 2).
+The parser also rejects any `df` output other than one header and exactly
+one filesystem row; accepting the last of multiple rows can hide an invalid
+or surprising mount selection.
 It does **not** delete anything, restart a service, pause job admission, or
 certify that the Woodpecker runner sees the same mount. A healthy snapshot can
 be invalidated instantly by simultaneous jobs. Recheck after quiescing work.
