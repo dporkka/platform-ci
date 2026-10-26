@@ -119,6 +119,92 @@ class DeploymentTests(unittest.TestCase):
                 probe_service()
 
 
+    def test_backup_is_not_published_before_file_sync(self):
+        import os
+        import stat
+        from unittest.mock import patch
+        from deploy_go_egress import _backup
+        with tempfile.TemporaryDirectory() as td:
+            live = Path(td) / "github_connect.py"
+            live.write_bytes(OLD)
+            backup = live.with_name(live.name + ".before-go-update")
+            fsync = os.fsync
+
+            def inspect_sync(fd):
+                if stat.S_ISREG(os.fstat(fd).st_mode):
+                    self.assertFalse(backup.exists(), "backup visible before durable payload")
+                return fsync(fd)
+
+            with patch("deploy_go_egress.os.fsync", side_effect=inspect_sync):
+                published = _backup(live, OLD, 0o644)
+            self.assertEqual(published, backup)
+            self.assertEqual(backup.read_bytes(), OLD)
+
+    def test_backup_fsync_failure_does_not_publish_partial_recovery_file(self):
+        import errno
+        import os
+        import stat
+        from unittest.mock import patch
+        from deploy_go_egress import _backup
+        with tempfile.TemporaryDirectory() as td:
+            live = Path(td) / "github_connect.py"
+            live.write_bytes(OLD)
+            backup = live.with_name(live.name + ".before-go-update")
+            fsync = os.fsync
+
+            def failed_file_sync(fd):
+                if stat.S_ISREG(os.fstat(fd).st_mode):
+                    raise OSError(errno.ENOSPC, "simulated full disk during backup fsync")
+                return fsync(fd)
+
+            with patch("deploy_go_egress.os.fsync", side_effect=failed_file_sync):
+                with self.assertRaises(OSError):
+                    _backup(live, OLD, 0o644)
+            self.assertEqual(live.read_bytes(), OLD)
+            self.assertFalse(backup.exists(), "never leave a partially synced backup")
+            self.assertEqual(list(Path(td).glob(".github-connect-backup-*")), [])
+
+    def test_backup_existing_symlink_preserved_and_stage_cleaned(self):
+        from deploy_go_egress import _backup
+        with tempfile.TemporaryDirectory() as td:
+            live = Path(td) / "github_connect.py"
+            outside = Path(td) / "existing-recovery"
+            outside.write_bytes(b"operator backup")
+            live.write_bytes(OLD)
+            backup = live.with_name(live.name + ".before-go-update")
+            backup.symlink_to(outside)
+            with self.assertRaises(FileExistsError):
+                _backup(live, OLD, 0o644)
+            self.assertTrue(backup.is_symlink())
+            self.assertEqual(outside.read_bytes(), b"operator backup")
+            self.assertEqual(list(Path(td).glob(".github-connect-backup-*")), [])
+
+    def test_directory_sync_failure_aborts_rollout_before_live_replace(self):
+        import errno
+        import os
+        import stat
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            live = Path(td) / "github_connect.py"
+            live.write_bytes(OLD)
+            fsync = os.fsync
+            events = []
+
+            def fail_directory_sync(fd):
+                if stat.S_ISDIR(os.fstat(fd).st_mode):
+                    raise OSError(errno.EIO, "simulated directory fsync failure")
+                return fsync(fd)
+
+            with patch("deploy_go_egress.os.fsync", side_effect=fail_directory_sync):
+                with self.assertRaises(OSError):
+                    deploy(CANDIDATE, live, capacity_check=lambda _: None, sleep=lambda _: None,
+                           sessions=lambda: "", restart=lambda: events.append("restart"),
+                           probe=lambda: events.append("probe"))
+            self.assertEqual(live.read_bytes(), OLD)
+            self.assertEqual(live.with_name(live.name + ".before-go-update").read_bytes(), OLD)
+            self.assertEqual(events, [])
+            self.assertEqual(list(Path(td).glob(".github-connect-backup-*")), [])
+
     def test_storage_preflight_rejects_low_space_and_high_utilization(self):
         from collections import namedtuple
         from deploy_go_egress import ensure_storage_headroom
