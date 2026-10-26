@@ -259,5 +259,68 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(events, [])
 
 
+    def test_published_live_policy_and_rollback_are_directory_synced_before_restart(self):
+        import os
+        import stat
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            live = Path(td) / "github_connect.py"
+            live.write_bytes(OLD)
+            events = []
+            original_fsync = os.fsync
+
+            def record_fsync(fd):
+                if stat.S_ISDIR(os.fstat(fd).st_mode):
+                    events.append("directory-fsync")
+                return original_fsync(fd)
+
+            def fail_probe():
+                events.append("probe")
+                raise RuntimeError("injected unhealthy live proxy")
+
+            with patch("deploy_go_egress.os.fsync", side_effect=record_fsync):
+                with self.assertRaisesRegex(RuntimeError, "injected unhealthy live proxy"):
+                    deploy(CANDIDATE, live, capacity_check=lambda _: None,
+                           sleep=lambda _: None, sessions=lambda: "",
+                           restart=lambda: events.append("restart"), probe=fail_probe)
+            self.assertEqual(live.read_bytes(), OLD)
+            # Backup directory sync; new policy directory sync before restart;
+            # rollback directory sync before rollback restart.
+            self.assertEqual(events, [
+                "directory-fsync", "directory-fsync", "restart",
+                "probe", "directory-fsync", "restart",
+            ])
+
+    def test_live_publish_directory_sync_failure_rolls_back_before_restart(self):
+        import errno
+        import os
+        import stat
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            live = Path(td) / "github_connect.py"
+            live.write_bytes(OLD)
+            original_fsync = os.fsync
+            directory_syncs = []
+            events = []
+
+            def fail_first_live_directory_fsync(fd):
+                if stat.S_ISDIR(os.fstat(fd).st_mode):
+                    directory_syncs.append(True)
+                    if len(directory_syncs) == 2:
+                        raise OSError(errno.EIO, "injected live-directory fsync error")
+                return original_fsync(fd)
+
+            with patch("deploy_go_egress.os.fsync", side_effect=fail_first_live_directory_fsync):
+                with self.assertRaisesRegex(OSError, "injected live-directory fsync error"):
+                    deploy(CANDIDATE, live, capacity_check=lambda _: None,
+                           sleep=lambda _: None, sessions=lambda: "",
+                           restart=lambda: events.append("restart"),
+                           probe=lambda: events.append("probe"))
+            self.assertEqual(live.read_bytes(), OLD)
+            self.assertEqual(len(directory_syncs), 3,
+                             "backup, failed forward sync and successful rollback sync required")
+            self.assertEqual(events, ["restart"], "only rollback may restart after failed sync")
+
+
 if __name__ == "__main__":
     unittest.main()
