@@ -68,7 +68,16 @@ sudo python3 woodpecker/egress/deploy_go_egress.py \
 ```
 
 The one-off helper pins the reviewed candidate Git blob; checks that only the
-two exact Go HTTPS destinations are added; checks for active CONNECT sessions
+two exact Go HTTPS destinations are added; **fails closed when the live
+filesystem has less than 20 GiB available or reaches 95% utilization**, before
+reporting read-only readiness and again immediately before writing a backup.
+Malformed filesystem capacity evidence also blocks the rollout. This check is
+read-only and does not reserve space: operator-controlled admission quiescence
+and adequate sustained disk headroom remain mandatory. A failed capacity check
+must never be overridden by clearing active compiler caches or pruning
+running Docker/Dagger resources.
+
+The helper also checks for active CONNECT sessions
 over a ten-second quiet window; requires an explicit `--confirm-ci-quiesced`
 operator acknowledgement when applying, an existing root-owned regular
 mode-0644 live file, and refuses to overwrite an existing backup. The quiet
