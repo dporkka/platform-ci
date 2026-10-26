@@ -44,6 +44,28 @@ def current_sessions() -> str:
 
 
 
+def current_agent_processes() -> str:
+    """Conservatively detect local Woodpecker agents that can admit jobs."""
+    return subprocess.run(
+        ["ps", "-eo", "args="], capture_output=True, text=True,
+        check=True, timeout=8,
+    ).stdout
+
+
+def ensure_agents_stopped(processes) -> None:
+    """Idle CONNECT sockets cannot prove quiescence while agents still run."""
+    for line in processes().splitlines():
+        argv = line.strip().split(None, 1)
+        if argv and os.path.basename(argv[0]) == "woodpecker-agent":
+            raise ValueError("Woodpecker agents still running; stop CI job admission")
+
+
+def _prewrite_operator_guards(live: Path) -> None:
+    # Admission must remain stopped at the final pre-backup boundary.
+    ensure_agents_stopped(current_agent_processes)
+    ensure_storage_headroom(live)
+
+
 MIN_FREE_GIB = 20
 MAX_USED_PERCENT = 95
 
@@ -215,6 +237,7 @@ def main() -> int:
         raise ValueError("--apply requires --confirm-ci-quiesced after stopping CI job admission")
     ensure_idle(current_sessions)
     ensure_storage_headroom(LIVE)
+    ensure_agents_stopped(current_agent_processes)
     if not args.apply:
         print("PASS: reviewed candidate, unchanged proxy logic, and zero live CONNECT sessions")
         print("Read-only preflight; nothing deployed. --apply requires authorized operator.")
@@ -229,7 +252,7 @@ def main() -> int:
     subprocess.run(["systemctl", "is-active", "--quiet", SERVICE],
                    check=True, timeout=8)
     deploy(data, LIVE, sessions=current_sessions, restart=restart_service,
-           probe=probe_service)
+           probe=probe_service, capacity_check=_prewrite_operator_guards)
     print("PASS: service restarted, allow/deny probes passed; backup retained")
     print("NEXT: required in-runner Go 1.26/1.27 and PostGIS CI canary")
     return 0
