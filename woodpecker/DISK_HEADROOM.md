@@ -42,3 +42,55 @@ first prove that `df /` inside that precise runner reflects the same capacity
 as the target CI host and that the check runs before expensive storage use.
 It also does not provide access to authenticated Woodpecker step logs or
 authorize the separately reviewed restricted-egress proxy rollout.
+
+
+## Operator response when the headroom gate blocks
+
+Do not equate the absence of a visible `cargo` process with a drained
+Woodpecker queue. A new job may start immediately after inspection. This
+procedure is deliberately separated from the check script and requires an
+authorized operator:
+
+1. **Quiesce admission first.** Use the CI control plane and a reviewed
+   maintenance window to prevent new jobs, then let active jobs complete.
+   Confirm the queue and agents are drained with authenticated evidence;
+   never terminate unrelated builds to make the disk check pass.
+2. **Capture filesystem and activity evidence without writing:**
+
+   ```sh
+   df -B1 --output=size,used,avail,pcent /
+   du -sh /tmp/cargo-target/debug/incremental \
+          /tmp/cargo-target/debug/deps \
+          /home/ci-agent/.cache/go-build 2>/dev/null
+   ps -eo pid,etime,comm,args | grep -E '[c]argo|[r]ustc|[g]o test'
+   ss -Htn state established '( sport = :3188 )'
+   ```
+
+   These are examples for the current CI host layout, **not** permission
+   to purge those paths. A zero process count or zero proxy sessions at one
+   instant is insufficient to prove admission quiescence.
+3. **Select only individually verified, rebuildable artifacts.** Require
+   documented path ownership, the originating job/project, proof that the
+   job is complete, and an approved retention policy before any removal.
+   Never delete an entire shared Cargo target, another project's active
+   incremental cache, image/volume, backup, or running overlay merely because
+   `du` shows it is large. The read-only tool does not perform cleanup.
+4. **Recheck both constraints after capacity is stabilized:** free space
+   must be at least **20 GiB**, *and* filesystem utilization must be
+   **strictly below 95%**. On a roughly 484 GiB volume, the utilization rule
+   implies a larger practical free-space reserve than 20 GiB. Plan additional
+   room for concurrent Go/PostGIS/Rust builds rather than operating exactly
+   on either threshold.
+5. **Then**, and only in the separate authorized maintenance workflow,
+   run the reviewed restricted-egress deployment preflight. The proxy
+   deployment in platform-ci #21 also requires explicit admission-quiescence
+   confirmation and repeated zero-CONNECT checks, then a reversible narrow
+   policy rollout. Passing this disk check alone never authorizes a restart.
+6. Reopen admission only after in-runner Go module/checksum allow/deny canaries
+   and executable exact-head Vertigo Go/PostGIS/RLS/restore checks complete
+   under the intended policy. Do not change GitHub required checks to
+   accommodate failures.
+
+If any condition cannot be independently verified, stop and preserve the
+current state. Record disk measurements and blocked checks in platform-ci
+#20/#22 and Vertigo #50 rather than claiming release readiness.
