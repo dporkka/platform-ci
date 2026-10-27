@@ -86,10 +86,12 @@ authorized operator:
    deployment in platform-ci #21 also requires explicit admission-quiescence
    confirmation and repeated zero-CONNECT checks, then a reversible narrow
    policy rollout. Passing this disk check alone never authorizes a restart.
-6. Reopen admission only after in-runner Go module/checksum allow/deny canaries
-   and executable exact-head Vertigo Go/PostGIS/RLS/restore checks complete
-   under the intended policy. Do not change GitHub required checks to
-   accommodate failures.
+6. Keep general CI admission paused while the operator permits **only**
+   controlled validation canary jobs to run against the reviewed policy.
+   Require in-runner Go module/checksum allow/deny proof and executable
+   exact-head Vertigo Go/PostGIS/RLS/restore checks. Resume normal admission
+   only after validation and rollback readiness are verified; do not change
+   GitHub required checks to accommodate failures.
 
 If any condition cannot be independently verified, stop and preserve the
 current state. Record disk measurements and blocked checks in platform-ci
