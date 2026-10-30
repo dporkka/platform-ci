@@ -27,6 +27,7 @@ grep -Fq 'false/unset' woodpecker/CONTROL_PLANE.md ||
 grep -Fq 'pool: bootstrap-ci' woodpecker/README.md ||
   fail 'Woodpecker README must document mandatory bootstrap routing'
 
+bash woodpecker/scripts/setup-repo-lock.test.sh
 bash woodpecker/scripts/recover-control-plane.test.sh
 bash woodpecker/scripts/queue-position.test.sh
 bash woodpecker/scripts/ensure-cancel-previous.test.sh

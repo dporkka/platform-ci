@@ -110,14 +110,13 @@ else
   LOCK_KIND="mkdir"
   WAITED=0
   while ! mkdir "$LOCK.d" 2>/dev/null; do
-    # A step killed while holding the lock leaves $LOCK.d behind; only a
-    # finished install by the holder (stamp present) or a bounded wait ends it.
-    if [ -f "$STAMP" ]; then
-      break
-    fi
+    # A killed owner can leave the directory behind. Never treat a stamp
+    # as lock ownership: removing someone else's live lock permits races.
+    # If the lock cannot be acquired, fail closed rather than install without it.
     WAITED=$((WAITED + 1))
     if [ "$WAITED" -gt 300 ]; then
-      break
+      printf 'Woodpecker install lock timed out; refusing unlocked install\\n' >&2
+      exit 1
     fi
     sleep 2
   done
