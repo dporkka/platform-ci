@@ -26,6 +26,8 @@ ALLOWED = frozenset((
     "fonts.googleapis.com", "fonts.gstatic.com", "mirror.gcr.io",
     # Exact Go module and integrity endpoints; no wildcard or arbitrary hosts.
     "proxy.golang.org", "sum.golang.org",
+    # Exact Python package index and wheel CDN; no wildcard origins.
+    "pypi.org", "files.pythonhosted.org",
 ))
 CONNECT_LINE = re.compile(rb"CONNECT ([A-Za-z0-9.-]+):443 HTTP/1\.[01]\r?\n")
 

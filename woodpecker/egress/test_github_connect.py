@@ -46,6 +46,22 @@ class ProxyPolicyTests(unittest.TestCase):
         self.assertIn(b"403 Forbidden", result)
         self.assertEqual(outbound, 0)
 
+    def test_python_package_index_hosts_use_restricted_https_connect(self):
+        # pip reads metadata from PyPI and wheels from the pythonhosted CDN.
+        # Do not allow wildcard hosts or lookalike subdomains.
+        for hostname in ("pypi.org", "files.pythonhosted.org"):
+            result, outbound = self._request(
+                f"CONNECT {hostname}:443 HTTP/1.1\r\nHost: {hostname}\r\n\r\n".encode()
+            )
+            self.assertIn(b"502 Bad Gateway", result, hostname)
+            self.assertEqual(outbound, 1, hostname)
+        for hostname in ("pypi.org.evil.example", "evil.files.pythonhosted.org"):
+            result, outbound = self._request(
+                f"CONNECT {hostname}:443 HTTP/1.1\r\nHost: {hostname}\r\n\r\n".encode()
+            )
+            self.assertIn(b"403 Forbidden", result, hostname)
+            self.assertEqual(outbound, 0, hostname)
+
     def test_service_listens_only_on_private_bridge_addresses(self):
         source = SRC.read_text()
         self.assertIn('Server(("172.18.0.1", 3188)', source)
