@@ -10,28 +10,28 @@ ORIGINAL = (ROOT / "github_connect.py").read_text()
 
 
 class DeploymentPreflightTests(unittest.TestCase):
-    def test_only_required_go_hosts_may_be_added(self):
+    def test_only_required_python_package_hosts_may_be_added(self):
         old = ORIGINAL.replace(
-            '    "proxy.golang.org", "sum.golang.org",\n',
+            '    "pypi.org", "files.pythonhosted.org",\n',
             "",
         )
         verify_policy(old, ORIGINAL)
 
     def test_unexpected_additional_origin_is_rejected(self):
         old = ORIGINAL.replace(
-            '    "proxy.golang.org", "sum.golang.org",\n',
+            '    "pypi.org", "files.pythonhosted.org",\n',
             "",
         )
         bad = ORIGINAL.replace(
-            '    "proxy.golang.org", "sum.golang.org",',
-            '    "proxy.golang.org", "sum.golang.org", "attacker.example",',
+            '    "pypi.org", "files.pythonhosted.org",',
+            '    "pypi.org", "files.pythonhosted.org", "attacker.example",',
         )
         with self.assertRaisesRegex(ValueError, "unexpected"):
             verify_policy(old, bad)
 
     def test_change_outside_allowlist_is_rejected(self):
         old = ORIGINAL.replace(
-            '    "proxy.golang.org", "sum.golang.org",\n',
+            '    "pypi.org", "files.pythonhosted.org",\n',
             "",
         )
         bad = ORIGINAL.replace(
