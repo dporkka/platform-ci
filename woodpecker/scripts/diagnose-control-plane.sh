@@ -73,6 +73,19 @@ container_env_value() {
     | awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }'
 }
 
+agent_has_label() {
+  local csv="$1" requested="$2" entry
+  local -a entries=()
+  IFS=',' read -r -a entries <<<"$csv"
+  for entry in "${entries[@]}"; do
+    # Treat incidental spaces around a label as insignificant.
+    if [[ "${entry//[[:space:]]/}" == "$requested" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 section "configuration"
 printf 'server: %s\nrepo:   %s\n' "$server" "$repo"
 if [[ -n "$pipeline" ]]; then
@@ -341,6 +354,19 @@ if ((${#runtimes[@]} > 0)); then
         agent_single="$(container_env_value "$runtime" "$name" WOODPECKER_AGENT_SINGLE_WORKFLOW || true)"
         agent_capacity="$(container_env_value "$runtime" "$name" WOODPECKER_MAX_WORKFLOWS || true)"
         agent_retry="$(container_env_value "$runtime" "$name" WOODPECKER_RETRY_TIMEOUT || true)"
+        agent_labels="$(container_env_value "$runtime" "$name" WOODPECKER_AGENT_LABELS || true)"
+        legacy_labels="$(container_env_value "$runtime" "$name" WOODPECKER_LABELS || true)"
+
+        if [[ -n "$legacy_labels" ]]; then
+          warn "$runtime:$name defines WOODPECKER_LABELS; Woodpecker 3.x agent scheduling uses WOODPECKER_AGENT_LABELS"
+        fi
+        if [[ "$agent_hostname" == "bootstrap-ci-1" ]]; then
+          if agent_has_label "$agent_labels" "pool=bootstrap-ci"; then
+            ok "$runtime:$name explicitly advertises WOODPECKER_AGENT_LABELS with pool=bootstrap-ci"
+          else
+            fail "$runtime:$name is the stable bootstrap agent but lacks WOODPECKER_AGENT_LABELS with pool=bootstrap-ci; inspect active container labels and server-side filters"
+          fi
+        fi
 
         printf '  agent hostname=%s backend=%s single_workflow=%s max_workflows=%s retry_timeout=%s\n' \
           "${agent_hostname:-unset}" "${agent_backend:-unset}" "${agent_single:-unset}" \
