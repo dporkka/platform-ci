@@ -29,6 +29,24 @@ class ProxyPolicyTests(unittest.TestCase):
         self.assertIsNotNone(proxy.CONNECT_LINE.fullmatch(b"CONNECT github.com:443 HTTP/1.1\r\n"))
         self.assertIsNone(proxy.CONNECT_LINE.fullmatch(b"CONNECT github.com:80 HTTP/1.1\r\n"))
 
+    def test_websyt_lighthouse_origin_is_exact_and_tls_only(self):
+        allowed, outbound = self._request(
+            b"CONNECT websyt.dev:443 HTTP/1.1\r\nHost: websyt.dev\r\n\r\n"
+        )
+        # Upstream is deliberately unavailable in this offline test. 502
+        # and one connection attempt prove the request reached the allowlist.
+        self.assertIn(b"502 Bad Gateway", allowed)
+        self.assertEqual(outbound, 1)
+        for attempted in (
+            b"CONNECT www.websyt.dev:443 HTTP/1.1\r\nHost: www.websyt.dev\r\n\r\n",
+            b"CONNECT websyt.dev.attacker.example:443 HTTP/1.1\r\nHost: websyt.dev.attacker.example\r\n\r\n",
+            b"CONNECT websyt.dev:80 HTTP/1.1\r\nHost: websyt.dev\r\n\r\n",
+            b"GET / HTTP/1.1\r\nHost: websyt.dev\r\n\r\n",
+        ):
+            denied, attempts = self._request(attempted)
+            self.assertIn(b"403 Forbidden", denied)
+            self.assertEqual(attempts, 0)
+
     def test_go_module_hosts_use_restricted_https_connect(self):
         # Go 1.26/1.27 CI resolves modules through the module proxy and
         # validates integrity through the checksum database. No wildcard is
