@@ -13,8 +13,9 @@ a private GitHub repository.
   that host address when crossing to Docker-private bridge listeners.
 - Permit HTTP CONNECT to port **443 only**, for explicit domains in `ALLOWED`.
   The Go validation matrix requires the exact `proxy.golang.org` module endpoint
-  and `sum.golang.org` checksum endpoint. Do not introduce wildcard hosts or
-  disable Go checksum verification.
+  and `sum.golang.org` checksum endpoint. The public Websyt Lighthouse audit
+  additionally requires the exact `websyt.dev` hostname. Do not introduce
+  wildcard hosts or disable Go checksum verification or TLS validation.
 - Do not log request bodies, intercept TLS, expose the proxy publicly, or turn
   the bridge into a generic outbound HTTP proxy.
 - Run under the existing unprivileged `woodpecker-github-egress.service` unit;
@@ -42,17 +43,28 @@ behavior without making external network requests.
 Deploy only after verifying that no jobs have live connections to the egress
 bridge. First run the read-only source policy preflight using the **current live
 file** and the proposed file (either on the CI host or with a securely retrieved
-copy of the live source). It must report that only the two exact Go destinations
-are added and no proxy behavior changes:
+copy of the live source). It must report that only the exact public `websyt.dev` destination
+is added and no proxy behavior changes:
 
 ```sh
 python3 woodpecker/egress/check_deployment.py \
   --deployed /opt/woodpecker/egress-proxy/github_connect.py \
-  --candidate woodpecker/egress/github_connect.py
+  --candidate woodpecker/egress/github_connect.py \
+  --require-idle
 ```
 
-If the preflight fails, investigate drift before changing the live service.
-Only deploy during an observed idle window. On the CI host:
+The optional `--require-idle` flag invokes a **read-only**, bounded
+`ss` check on the deployment host and refuses to proceed if any established
+connections to the private port 3188 are observed. A missing or failing `ss`
+command also fails closed. Run this preflight **on the actual CI host** for
+a deployment decision; an offline copy validates the source delta only. An
+authorized operator must check for connections again immediately before
+install/restart, because a preflight is not a lock against new CI traffic.
+
+If the preflight fails, investigate drift or running CI sessions before
+changing the live service. Only deploy during an observed idle window. The Lighthouse preflight
+will continue to fail until the live proxy has been updated by an authorized
+root operator; changing this repository alone does not update the service. On the CI host:
 
 ```sh
 sudo ss -Htn state established '( sport = :3188 )'
