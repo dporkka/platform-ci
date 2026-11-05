@@ -49,11 +49,20 @@ is added and no proxy behavior changes:
 ```sh
 python3 woodpecker/egress/check_deployment.py \
   --deployed /opt/woodpecker/egress-proxy/github_connect.py \
-  --candidate woodpecker/egress/github_connect.py
+  --candidate woodpecker/egress/github_connect.py \
+  --require-idle
 ```
 
-If the preflight fails, investigate drift before changing the live service.
-Only deploy during an observed idle window. The Lighthouse preflight
+The optional `--require-idle` flag invokes a **read-only**, bounded
+`ss` check on the deployment host and refuses to proceed if any established
+connections to the private port 3188 are observed. A missing or failing `ss`
+command also fails closed. Run this preflight **on the actual CI host** for
+a deployment decision; an offline copy validates the source delta only. An
+authorized operator must check for connections again immediately before
+install/restart, because a preflight is not a lock against new CI traffic.
+
+If the preflight fails, investigate drift or running CI sessions before
+changing the live service. Only deploy during an observed idle window. The Lighthouse preflight
 will continue to fail until the live proxy has been updated by an authorized
 root operator; changing this repository alone does not update the service. On the CI host:
 
