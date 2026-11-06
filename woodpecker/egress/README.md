@@ -100,3 +100,26 @@ an idle window, deploy using the reversible instructions above, and verify
 the limited host and suffix-denial probes. Then execute a fresh exact-head
 Woodpecker OpenTofu check and all Rust/tenant-isolation gates before merging
 Nulang Cloud release changes. Proxy policy admission is not a green CI result.
+
+### Repeatable post-deployment policy probe
+
+From the CI host in a **read-only** context (or, preferably, inside the
+authorized Woodpecker job network namespace), run this credential-free
+CONNECT-only acceptance probe against each private listener:
+
+```sh
+python3 woodpecker/egress/probe_connect.py --proxy-host 172.17.0.1
+python3 woodpecker/egress/probe_connect.py --proxy-host 172.18.0.1
+```
+
+It verifies registry and GitHub TCP CONNECT admission (status 200), and
+continued denial (status 403) for a misleading registry suffix and port 80.
+The probe sends **no TLS application bytes, authorization, or secrets**.
+It returns a nonzero exit code if any destination has the wrong status or
+the socket is unreachable. A host-shell success alone does not establish
+that real Woodpecker job containers share the same egress path; an
+isolated-container check and actual executable CI gate remain required.
+
+**Expected before the allowlist rollout:** both provider-registry checks fail
+with status 403 and the script exits nonzero. This is a diagnostic, not
+permission to weaken the negative tests or suppress failures.
