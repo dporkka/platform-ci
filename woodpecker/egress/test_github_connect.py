@@ -46,6 +46,27 @@ class ProxyPolicyTests(unittest.TestCase):
         self.assertIn(b"403 Forbidden", result)
         self.assertEqual(outbound, 0)
 
+    def test_opentofu_registries_are_exact_https_destinations_only(self):
+        # OpenTofu init must reach both provider discovery domains, but never
+        # arbitrary subdomains or non-443 destinations.
+        for hostname in ("registry.opentofu.org", "registry.terraform.io"):
+            self.assertIn(hostname, proxy.ALLOWED)
+            result, outbound = self._request(
+                f"CONNECT {hostname}:443 HTTP/1.1\r\nHost: {hostname}\r\n\r\n".encode()
+            )
+            self.assertIn(b"502 Bad Gateway", result, hostname)
+            self.assertEqual(outbound, 1, hostname)
+            result, outbound = self._request(
+                f"CONNECT {hostname}.attacker.example:443 HTTP/1.1\r\n\r\n".encode()
+            )
+            self.assertIn(b"403 Forbidden", result, hostname)
+            self.assertEqual(outbound, 0, hostname)
+            result, outbound = self._request(
+                f"CONNECT {hostname}:80 HTTP/1.1\r\n\r\n".encode()
+            )
+            self.assertIn(b"403 Forbidden", result, hostname)
+            self.assertEqual(outbound, 0, hostname)
+
     def test_service_listens_only_on_private_bridge_addresses(self):
         source = SRC.read_text()
         self.assertIn('Server(("172.18.0.1", 3188)', source)

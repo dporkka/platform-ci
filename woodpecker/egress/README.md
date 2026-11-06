@@ -13,7 +13,9 @@ a private GitHub repository.
   that host address when crossing to Docker-private bridge listeners.
 - Permit HTTP CONNECT to port **443 only**, for explicit domains in `ALLOWED`.
   The Go validation matrix requires the exact `proxy.golang.org` module endpoint
-  and `sum.golang.org` checksum endpoint. Do not introduce wildcard hosts or
+  and `sum.golang.org` checksum endpoint. Nulang Cloud OpenTofu provider
+  discovery also needs the exact `registry.opentofu.org` and
+  `registry.terraform.io` endpoints. Do not introduce wildcard hosts or
   disable Go checksum verification.
 - Do not log request bodies, intercept TLS, expose the proxy publicly, or turn
   the bridge into a generic outbound HTTP proxy.
@@ -42,7 +44,7 @@ behavior without making external network requests.
 Deploy only after verifying that no jobs have live connections to the egress
 bridge. First run the read-only source policy preflight using the **current live
 file** and the proposed file (either on the CI host or with a securely retrieved
-copy of the live source). It must report that only the two exact Go destinations
+copy of the live source). It must report that only the two exact provider-registry destinations
 are added and no proxy behavior changes:
 
 ```sh
@@ -76,3 +78,25 @@ proxy CONNECT probe and Websyt PR #299's dedicated `backup-recovery` workflow
 completed with a successful checkout, Restic integrity check, and encrypted
 restore smoke test. The corresponding production source was backed up at
 `/opt/woodpecker/egress-proxy/github_connect.py.bak-before-rootless-20261023`.
+
+## November 6, 2026 — OpenTofu provider egress correction
+
+Nulang Cloud #391 documents historical `tofu init -backend=false` failures
+where provider discovery received `Forbidden`. Read-only checks on CI host
+`vmi3235364` show HTTP 200 for direct registry discovery but HTTP 403
+through the live restricted CONNECT proxy for both domains, while GitHub
+CONNECT remains allowed (HTTP 200). This demonstrates a concrete egress-policy
+gap, though authenticated Woodpecker logs are still needed to confirm which
+network path each failing job used.
+
+This change only adds two *exact* provider registry hostnames to port-443
+CONNECT policy. It does not permit arbitrary egress, disable provider
+verification, change CI required checks, or silently substitute mirrors.
+
+The rollout is **not automatic**. A privileged operator must run the
+read-only `check_deployment.py` against the actual live proxy, require only
+the two specified host additions with all other logic unchanged, observe
+an idle window, deploy using the reversible instructions above, and verify
+the limited host and suffix-denial probes. Then execute a fresh exact-head
+Woodpecker OpenTofu check and all Rust/tenant-isolation gates before merging
+Nulang Cloud release changes. Proxy policy admission is not a green CI result.
