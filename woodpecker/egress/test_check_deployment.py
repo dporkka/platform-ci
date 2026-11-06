@@ -10,28 +10,36 @@ ORIGINAL = (ROOT / "github_connect.py").read_text()
 
 
 class DeploymentPreflightTests(unittest.TestCase):
-    def test_only_required_go_hosts_may_be_added(self):
+    def test_provider_registry_hosts_are_only_required_additions(self):
+        from check_deployment import REQUIRED_ADDITIONS
+
+        self.assertEqual(
+            REQUIRED_ADDITIONS,
+            {"registry.opentofu.org", "registry.terraform.io"},
+        )
+
+    def test_only_required_registry_hosts_may_be_added(self):
         old = ORIGINAL.replace(
-            '    "proxy.golang.org", "sum.golang.org",\n',
+            '    "registry.opentofu.org", "registry.terraform.io",\n',
             "",
         )
         verify_policy(old, ORIGINAL)
 
     def test_unexpected_additional_origin_is_rejected(self):
         old = ORIGINAL.replace(
-            '    "proxy.golang.org", "sum.golang.org",\n',
+            '    "registry.opentofu.org", "registry.terraform.io",\n',
             "",
         )
         bad = ORIGINAL.replace(
-            '    "proxy.golang.org", "sum.golang.org",',
-            '    "proxy.golang.org", "sum.golang.org", "attacker.example",',
+            '    "registry.opentofu.org", "registry.terraform.io",',
+            '    "registry.opentofu.org", "registry.terraform.io", "attacker.example",',
         )
         with self.assertRaisesRegex(ValueError, "unexpected"):
             verify_policy(old, bad)
 
     def test_change_outside_allowlist_is_rejected(self):
         old = ORIGINAL.replace(
-            '    "proxy.golang.org", "sum.golang.org",\n',
+            '    "registry.opentofu.org", "registry.terraform.io",\n',
             "",
         )
         bad = ORIGINAL.replace(

@@ -4,7 +4,7 @@ import argparse
 import ast
 from pathlib import Path
 
-REQUIRED_ADDITIONS = {"proxy.golang.org", "sum.golang.org"}
+REQUIRED_ADDITIONS = {"registry.opentofu.org", "registry.terraform.io"}
 
 
 def _parts(source: str) -> tuple[set[str], list[str]]:
@@ -50,7 +50,7 @@ def main() -> int:
     except (ValueError, OSError, SyntaxError) as exc:
         print(f"FAIL: {exc}")
         return 1
-    print("PASS: only proxy.golang.org and sum.golang.org added; proxy logic unchanged")
+    print("PASS: only registry.opentofu.org and registry.terraform.io added; proxy logic unchanged")
     return 0
 
 
