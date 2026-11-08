@@ -26,6 +26,8 @@ ALLOWED = frozenset((
     "fonts.googleapis.com", "fonts.gstatic.com", "mirror.gcr.io",
     # Exact Go module and integrity endpoints; no wildcard or arbitrary hosts.
     "proxy.golang.org", "sum.golang.org",
+    # Public Websyt landing page used by the pinned Lighthouse audit only.
+    "websyt.dev",
 ))
 CONNECT_LINE = re.compile(rb"CONNECT ([A-Za-z0-9.-]+):443 HTTP/1\.[01]\r?\n")
 
