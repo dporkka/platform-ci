@@ -13,6 +13,9 @@ case "${TEST_DF_CASE:-ok}" in
   missing_percent) printf '1B-blocks Used Avail Use%%\n519691042816 468151435264 51539607552 91\n' ;;
   broken) printf '1B-blocks Used Avail Use%%\n1 no-data 0 unknown\n' ;;
   duplicate_rows) printf '1B-blocks Used Avail Use%%\n519691042816 468151435264 51539607552 91%%\n519691042816 468151435264 51539607552 91%%\n' ;;
+  headerless_rows) printf '519691042816 503584800768 16106127360 96%%\n519691042816 468151435264 51539607552 91%%\n' ;;
+  reserved_exhausted) printf '1B-blocks Used Avail Use%%\n107374182400 105226698752 -3221225472 104%%\n' ;;
+  leading_zero_percentage) printf '1B-blocks Used Avail Use%%\n107374182400 80530636800 26843545600 075%%\n' ;;
   unavailable) exit 66 ;;
   *) exit 67 ;;
 esac
@@ -40,10 +43,13 @@ case_result 1 'status=blocked' high_percent
 case_result 2 'status=error' missing_percent
 case_result 2 'status=error' broken
 case_result 2 'status=error' unavailable
+case_result 2 'status=error' headerless_rows
+case_result 1 'status=blocked' reserved_exhausted
+case_result 1 'status=blocked' leading_zero_percentage --max-used-percent 70
 case_result 2 'status=error' duplicate_rows
 case_result 2 'status=error' ok --min-free-gib -1
 case_result 2 'status=error' ok --max-used-percent 101
 case_result 2 'status=error' ok --unknown
 case_result 1 'status=blocked' ok --min-free-gib 60
 case_result 0 'status=ok' ok --min-free-gib 20 --max-used-percent 92
-echo 'PASS: 12 offline fail-closed disk-headroom cases'
+echo 'PASS: 15 offline fail-closed disk-headroom cases'
