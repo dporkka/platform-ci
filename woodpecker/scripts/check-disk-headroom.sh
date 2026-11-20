@@ -37,21 +37,37 @@ max_used_percent=$((10#$max_used_percent))
 
 # Deliberately fixed to / to prevent a runner inspecting an unrelated mount.
 # GNU df is already required by the deployed CI host's read-only monitor.
-if ! listing="$(df -B1 --output=size,used,avail,pcent / 2>/dev/null)"; then
+if ! listing="$(LC_ALL=C df -B1 --output=size,used,avail,pcent / 2>/dev/null)"; then
   error df_unavailable
 fi
 mapfile -t df_lines <<< "$listing"
 ((${#df_lines[@]} == 2)) || error unexpected_df_rows
+read -r header_size header_used header_avail header_percent header_extra <<< "${df_lines[0]}"
+[[ "$header_size" == '1B-blocks' && "$header_used" == 'Used' &&
+   "$header_avail" == 'Avail' && "$header_percent" == 'Use%' &&
+   -z "${header_extra:-}" ]] || error malformed_df_header
 read -r total used available percent extra <<< "${df_lines[1]}"
 [[ "$percent" =~ ^[0-9]+%$ ]] || error malformed_df
 percent="${percent%%%}"
-for value in "$total" "$used" "$available" "$percent"; do
+for value in "$total" "$used" "$percent"; do
   [[ "$value" =~ ^[0-9]+$ ]] || error malformed_df
   ((${#value} <= 18)) || error malformed_df
 done
+[[ "$available" =~ ^-?[0-9]+$ ]] || error malformed_df
+((${#available} <= 19)) || error malformed_df
 [[ -z "${extra:-}" ]] || error malformed_df
+# Parse validated input as decimal: bash treats unprefixed 075 as octal.
+total=$((10#$total))
+used=$((10#$used))
+percent=$((10#$percent))
+if [[ "$available" == -* ]]; then
+  available=$((-10#${available#-}))
+else
+  available=$((10#$available))
+fi
+# GNU df can report negative available bytes and >100% utilization when
+# filesystem reserved blocks are exhausted. That is blocked, not malformed.
 (( total > 0 && used <= total && available <= total && used + available <= total )) || error inconsistent_df
-(( percent <= 100 )) || error malformed_df
 
 min_free_bytes=$((min_free_gib * 1073741824))
 free_gib=$((available / 1073741824))
