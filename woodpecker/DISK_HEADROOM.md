@@ -14,12 +14,20 @@ The first command checks the filesystem containing `/`, reports the measured
 capacity and threshold in a stable single-line `status=ok` or `status=blocked`
 record, and exits 0 or 1 respectively. Bad arguments, malformed `df` output,
 or an unavailable disk inspection result are `status=error` (exit 2).
-The parser also rejects any `df` output other than one header and exactly
+The parser also rejects any `df` output other than one validated C-locale header and exactly
 one filesystem row; accepting the last of multiple rows can hide an invalid
 or surprising mount selection.
 It does **not** delete anything, restart a service, pause job admission, or
 certify that the Woodpecker runner sees the same mount. A healthy snapshot can
 be invalidated instantly by simultaneous jobs. Recheck after quiescing work.
+
+GNU df can report negative available bytes and utilization above 100% when
+reserved filesystem blocks are exhausted. Such observations are **blocked**
+rather than malformed. The parser accepts signed availability, converts all
+validated numeric fields to decimal (so 075% means 75%, not octal 61%), and
+rejects headerless two-row output. These safeguards are covered by the offline
+regressions. The check is still only a filesystem snapshot, not runner or
+admission authorization.
 
 The conservative defaults are **20 GiB available** and **under 95% usage**.
 For parallel PostgreSQL, Rust, and restore jobs, the operator may impose a
