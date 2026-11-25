@@ -125,3 +125,48 @@ if grep -q 'WARN:.*OAuth refresh' "$tmp/oauth-missing.out"; then
 fi
 echo "PASS: OAuth refresh status is read-only and distinguishes failure from healthy/absent"
 echo "PASS: exact pipeline diagnosis fails closed; generic health remains usable"
+
+# Woodpecker 3.19 requires WOODPECKER_AGENT_LABELS, not the old
+# WOODPECKER_LABELS environment variable. Exercise one local bootstrap agent
+# with a simulated read-only Docker inspect result.
+cat >"$tmp/bin/docker" <<'SH'
+#!/bin/sh
+case "$1" in
+  ps)
+    printf 'bootstrap-agent\twoodpeckerci/woodpecker-agent:v3.19\tUp 5 minutes\n'
+    ;;
+  inspect)
+    printf 'WOODPECKER_HOSTNAME=bootstrap-ci-1\n'
+    printf 'WOODPECKER_BACKEND=docker\n'
+    printf 'WOODPECKER_AGENT_SINGLE_WORKFLOW=false\n'
+    printf 'WOODPECKER_MAX_WORKFLOWS=1\n'
+    printf 'WOODPECKER_RETRY_TIMEOUT=0\n'
+    case "${MOCK_LABEL_CASE:-legacy}" in
+      legacy) printf 'WOODPECKER_LABELS=pool=bootstrap-ci,platform=linux/amd64\n';;
+      wrong) printf 'WOODPECKER_AGENT_LABELS=pool=wrong,platform=linux/amd64\n';;
+      correct) printf 'WOODPECKER_AGENT_LABELS=platform=linux/amd64,pool=bootstrap-ci\n';;
+    esac
+    ;;
+esac
+SH
+chmod +x "$tmp/bin/docker"
+
+if MOCK_OAUTH_CASE=healthy MOCK_LABEL_CASE=legacy diagnose >"$tmp/legacy-labels.out" 2>&1; then
+  echo "FAIL: legacy WOODPECKER_LABELS incorrectly certified as schedulable" >&2
+  exit 1
+fi
+if ! grep -q 'FAIL:.*WOODPECKER_AGENT_LABELS.*pool=bootstrap-ci' "$tmp/legacy-labels.out"; then
+  echo "FAIL: legacy labels not explained as a bootstrap scheduling failure" >&2
+  cat "$tmp/legacy-labels.out" >&2
+  exit 1
+fi
+if MOCK_OAUTH_CASE=healthy MOCK_LABEL_CASE=wrong diagnose >"$tmp/wrong-labels.out" 2>&1; then
+  echo "FAIL: unrelated agent pool incorrectly certified as bootstrap-ci" >&2
+  exit 1
+fi
+if ! MOCK_OAUTH_CASE=healthy MOCK_LABEL_CASE=correct diagnose >"$tmp/correct-labels.out" 2>&1; then
+  echo "FAIL: real bootstrap label rejected" >&2
+  cat "$tmp/correct-labels.out" >&2
+  exit 1
+fi
+echo "PASS: bootstrap agent label provenance distinguishes legacy, wrong, and correct configuration"
